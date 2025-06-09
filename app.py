@@ -182,21 +182,19 @@ if not df_products.empty:
         with st.spinner("Brewing up your perfect recommendations..."):
             filtered_products = df_products.copy()
 
-            filtered_products = filtered_products[
-                (filtered_products['category'].str.contains(drink_type, case=False, na=False))
-            ]
+            temp = filtered_products[filtered_products['category'].str.contains(drink_type, case=False, na=False)]
+            if not temp.empty:
+                filtered_products = temp
 
             if brew_method:
-                filtered_products = filtered_products[
-                    filtered_products['brew_method'].fillna('').apply(
-                        lambda x: any(b.lower() in x.lower() for b in brew_method)
-                    )
-                ]
+                temp = filtered_products[filtered_products['brew_method'].fillna('').apply(lambda x: any(b.lower() in x.lower() for b in brew_method))]
+                if not temp.empty:
+                    filtered_products = temp
 
             if drink_type == "Coffee" and roast_preference != "No preference":
-                filtered_products = filtered_products[
-                    filtered_products['roast_level'].str.contains(roast_preference, case=False, na=False)
-                ]
+                temp = filtered_products[filtered_products['roast_level'].str.contains(roast_preference, case=False, na=False)]
+                if not temp.empty:
+                    filtered_products = temp
 
             recommendations = pd.DataFrame()
             top_categories = df_products['flavor_category'].value_counts().head(3).index.tolist()
@@ -258,7 +256,10 @@ if not df_products.empty:
                         st.warning(f"AI fallback suggestion failed: {e}")
 
                 if recommendations.empty:
-                    recommendations = filtered_products.sample(min(3, len(filtered_products)))
+                    if filtered_products.empty:
+                        recommendations = df_products.sample(min(3, len(df_products)))
+                    else:
+                        recommendations = filtered_products.sample(min(3, len(filtered_products)))
             else:
                 st.warning("Please select at least one flavor note. We'll still match the closest products even if not all align.")
 
