@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 import re
-import requests
+import requests # Still useful for robustness in case st.image fails for some URL types
 import json
 from openai import OpenAI
 from sentence_transformers import SentenceTransformer, util
@@ -17,7 +17,7 @@ st.set_page_config(
     menu_items=None
 )
 
-# --- NO CUSTOM CSS APPLIED ---
+# --- NO CUSTOM CSS APPLIED - Relying on Streamlit's default theme ---
 
 
 # --- 2. Configuration & Initialization ---
@@ -55,48 +55,28 @@ def load_data_from_google_sheets():
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
 
-        # Sanitize column names
-        original_columns = df.columns.tolist()
+        # Sanitize column names (e.g., 'Caffeine Type' -> 'caffeine_type')
         df.columns = [re.sub(r'[^a-z0-9_]', '', col.lower().replace(' ', '_')) for col in df.columns]
 
-        # Debug: Show original and sanitized columns
-        # st.sidebar.write(f"Original Columns: {original_columns}")
-        # st.sidebar.write(f"Sanitized Columns: {df.columns.tolist()}")
-
-        # Ensure 'grind', 'size', and 'caffeine' are in required columns
-        # CHANGED: 'caffeine_type' to 'caffeine'
-        required_cols = ['name', 'category', 'short_description', 'long_description', 'price', 'bcl_website_link', 'grind', 'size', 'caffeine']
+        # Ensure required columns exist, add with empty strings if missing
+        # Updated 'caffeine_type' to 'caffeine' based on user's sheet
+        required_cols = ['name', 'category', 'short_description', 'long_description', 'price', 'bcl_website_link', 'grind', 'size', 'caffeine', 'roast_level', 'image_url']
         for col in required_cols:
             if col not in df.columns:
-                st.warning(f"Missing recommended column in Google Sheet: '{col}'. Please add it for full functionality. Proceeding without this filter.")
+                # Using st.warning here can clutter initial load; maybe better to log or just add column silently
+                # st.warning(f"Missing recommended column in Google Sheet: '{col}'. Proceeding without this filter.")
                 df[col] = '' # Add the missing column with empty strings
 
-        # Ensure essential columns exist, add if missing
-        if 'brew_method' not in df.columns:
-            df['brew_method'] = ''
-        if 'roast_level' not in df.columns:
-            df['roast_level'] = ''
-        if 'image_url' not in df.columns:
-            df['image_url'] = ''
-
         # Convert relevant columns to string type to prevent errors during processing
-        # CHANGED: 'caffeine_type' to 'caffeine'
+        # Updated 'caffeine_type' to 'caffeine'
         for col in ['name', 'category', 'short_description', 'long_description', 'brew_method', 'roast_level', 'bcl_website_link', 'image_url', 'grind', 'price', 'size', 'caffeine']:
             if col in df.columns:
                 df[col] = df[col].apply(lambda x: str(x) if pd.notna(x) else '')
             else:
-                df[col] = '' # Ensure it's added as string even if missing
+                df[col] = '' 
 
         # Attempt to convert price to numeric, coercing errors
         df['price'] = pd.to_numeric(df['price'], errors='coerce').fillna(0.0)
-
-        # Debug: Show unique values for size and caffeine before filtering them
-        if 'size' in df.columns:
-            st.sidebar.write(f"Raw unique 'size' values: {df['size'].unique().tolist()}")
-        # CHANGED: 'caffeine_type' to 'caffeine'
-        if 'caffeine' in df.columns:
-            st.sidebar.write(f"Raw unique 'caffeine' values: {df['caffeine'].unique().tolist()}")
-
 
         return df
     except Exception as e:
@@ -153,9 +133,43 @@ def extract_flavor_tags(data_series_name, data_series_long_desc):
             tags.append("")
     return tags
 
+@st.cache_data(ttl=3600, show_spinner="Generating AI summary...")
+def get_ai_summary(product_name, product_flavors, user_flavors):
+    """Generates an AI summary for why a product matches user preferences."""
+    if not product_flavors:
+        product_flavors_desc = "no specific flavor notes."
+    else:
+        product_flavors_desc = f"flavor notes of {product_flavors}."
+
+    if not user_flavors:
+        user_flavor_desc = "your general preferences."
+        prompt = f"Explain in 1-2 sentences why '{product_name}' with {product_flavors_desc} might be a great choice for a customer based on its inherent characteristics."
+    else:
+        user_flavor_desc = f"your selected flavor notes: {', '.join(user_flavors)}."
+        prompt = f"Explain in 1-2 sentences why '{product_name}' with {product_flavors_desc} is a good match for {user_flavor_desc}."
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a friendly coffee/tea expert. Provide concise and appealing summaries."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=100,
+            temperature=0.7
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Couldn't generate a summary for this product due to an AI error: {e}"
+
+
 # --- 4. Main App Logic ---
 st.title("\u2615\ufe0f Butler Coffee Lab – Flavor Match App")
 st.markdown("### Find your perfect brew, support a great cause!")
+st.markdown("---")
+st.markdown("#### Support a great cause! Donate here: [butlercoffeelab.org/pages/donate](https://www.butlercoffeelab.org/pages/donate)")
+st.markdown("---")
+
 
 df_products = load_data_from_google_sheets()
 
@@ -236,15 +250,14 @@ if not df_products.empty:
             st.info("No size options available in data.")
             selected_sizes = []
 
-        # Caffeine Type Filter
-        # CHANGED: 'caffeine_type' to 'caffeine'
+        # Caffeine Type Filter (using 'caffeine' column)
         available_caffeine_types = sorted(list(set([ct.strip() for ct in df_products['caffeine'].unique() if ct.strip()])))
         if available_caffeine_types:
             caffeine_preference = st.radio(
                 "Caffeine Preference:",
                 ["No preference"] + available_caffeine_types,
                 index=0,
-                key="caffeine_type_radio" # Kept key name for internal consistency, doesn't affect functionality
+                key="caffeine_radio" # Changed key to reflect 'caffeine'
             )
         else:
             st.info("No caffeine type options available in data.")
@@ -360,7 +373,6 @@ if not df_products.empty:
                     pass 
             
             # --- Caffeine Type Filter ---
-            # CHANGED: 'caffeine_type' to 'caffeine'
             if caffeine_preference != "No preference" and 'caffeine' in current_filtered_products.columns and not current_filtered_products.empty:
                 caffeine_match_mask = current_filtered_products['caffeine'].str.contains(caffeine_preference, case=False, na=False)
                 temp_df_after_caffeine = current_filtered_products[caffeine_match_mask]
@@ -479,7 +491,6 @@ if not df_products.empty:
                 st.markdown("---")
                 col1, col2 = st.columns([1, 2])
                 with col1:
-                    # Directly use st.image with the URL
                     if row['image_url'] and isinstance(row['image_url'], str) and row['image_url'].startswith("http"):
                         st.image(row['image_url'], use_container_width=True)
                     else:
@@ -491,16 +502,20 @@ if not df_products.empty:
                     if row['roast_level'].strip():
                         st.markdown(f"**Roast Level:** {row['roast_level']}")
                     if row['size'].strip():
-                        st.markdown(f"**Size:** {row['size']}") # Display size
-                    # CHANGED: 'caffeine_type' to 'caffeine'
-                    if row['caffeine'].strip():
-                        st.markdown(f"**Caffeine Type:** {row['caffeine']}") # Display caffeine type
+                        st.markdown(f"**Size:** {row['size']}") 
+                    if row['caffeine'].strip(): # Using 'caffeine' column
+                        st.markdown(f"**Caffeine Type:** {row['caffeine']}") 
                     
                     clean_short_description = str(row['short_description']).strip()
                     if clean_short_description:
                         st.write(f"*{clean_short_description}*")
                     else:
                         st.write("*No short description available.*")
+
+                    # AI Summary of the match
+                    st.markdown("#### Why this is a match for you:")
+                    summary = get_ai_summary(row['name'], row['specific_flavors'], flavor_input)
+                    st.write(summary)
 
                     st.markdown(f"**Price:** ${row['price']:.2f}")
                     if row['specific_flavors']:
