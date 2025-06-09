@@ -106,6 +106,10 @@ st.markdown("### Find your perfect brew, support a great cause!")
 
 df_products = load_data_from_google_sheets()
 
+# Ensure image_url column exists
+if 'image_url' not in df_products.columns:
+    df_products['image_url'] = ''
+
     # Ensure image_url column exists
     if 'image_url' not in df_products.columns:
         df_products['image_url'] = ''
