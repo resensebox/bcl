@@ -242,7 +242,7 @@ if not df_products.empty:
                     ]
 
                     if ai_suggested_tags_filtered:
-                        st.session_state.ai_suggested_tags = ai_suggested_tags_filtered
+                        st.session_state.ai_suggested_tags = ai_tags_filtered
                         st.markdown(f"**We think you might like these flavors:** {', '.join(ai_suggested_tags_filtered)}")
                         agree_to_ai_tags = st.radio(
                             "Are these on point?",
@@ -309,15 +309,11 @@ if not df_products.empty:
                 st.error("""
                 **ATTENTION: GRIND FILTER ISSUE DETECTED!**
                 
-                The debugging info shows that **after the Category filter, your dataset predominantly contains 'Pods' coffee, but you selected 'Ground' or 'Whole Bean' grind type.**
+                The debugging info shows that **after the initial category filter, your dataset predominantly contains 'Pods' coffee, but you selected 'Ground' or 'Whole Bean' grind type.**
                 
-                **This means there are NO 'Ground' or 'Whole Bean' coffee products in your Google Sheet that match your selected category.**
+                **This indicates that 'Ground' or 'Whole Bean' coffee products in your Google Sheet might be categorized differently (e.g., as 'Bags' instead of 'Coffee').**
                 
-                Please check your Google Sheet for products where:
-                1.  **Category is 'Coffee'** (or your selected category)
-                2.  **Grind is 'Ground' or 'Whole Bean'** (or your desired grind type).
-                
-                The filter logic is working, but it can only filter the data it receives.
+                The filter logic has been adjusted to account for 'Bags' when 'Coffee' is selected with 'Ground' or 'Whole Bean' grinds. If you still don't see results, please confirm your Google Sheet's 'Category' and 'Grind' columns are accurate for your coffee products.
                 """)
 
             st.write(f"**Initial DataFrame shape:** {current_filtered_products.shape}")
@@ -325,13 +321,19 @@ if not df_products.empty:
             st.markdown("---")
 
 
-            # 1. Filter by Drink Type (Category)
+            # 1. Filter by Drink Type (Category) - MODIFIED TO INCLUDE "BAGS" FOR COFFEE GRINDS
             if drink_type and drink_type != "Other":
                 category_mask = current_filtered_products['category'].str.contains(drink_type, case=False, na=False)
+                
+                # If "Coffee" is selected and user wants Ground/Whole Bean, also include "Bags" category
+                if drink_type == "Coffee" and any(g_opt in ['ground', 'whole bean'] for g_opt in brew_grind_options_user):
+                    bags_mask = current_filtered_products['category'].str.contains("Bags", case=False, na=False)
+                    category_mask = category_mask | bags_mask
+                
                 if category_mask.any():
                     current_filtered_products = current_filtered_products[category_mask]
                 else:
-                    st.warning(f"No products found specifically for '{drink_type}'. Proceeding with all categories to apply other filters.")
+                    st.warning(f"No products found specifically for '{drink_type}' (and potentially 'Bags' for coffee). Proceeding with all categories to apply other filters.")
                     current_filtered_products = df_products.copy() # Revert to full dataset if no matches for category
             
             st.write(f"**DataFrame shape after Category Filter:** {current_filtered_products.shape}")
@@ -339,7 +341,7 @@ if not df_products.empty:
             st.write(f"**Unique 'Grind' values (after Category Filter, normalized):** {current_filtered_products['grind'].str.strip().str.lower().unique().tolist()}")
 
 
-            # --- REWRITTEN GRIND FILTERING ---
+            # --- REWRITTEN GRIND FILTERING (Same as last version, as it correctly handles user input vs data) ---
             if brew_grind_options_user:
                 # Normalize the 'grind' column in the DataFrame for consistent matching
                 normalized_df_grind = current_filtered_products['grind'].str.strip().str.lower()
