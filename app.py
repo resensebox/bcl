@@ -6,12 +6,34 @@ import gspread
 import re
 from bs4 import BeautifulSoup
 import requests
-import json # To handle service account JSON
+import json
+import random # For surprise me option
+from sentence_transformers import SentenceTransformer, util # For embeddings
+import openai # For OpenAI API (or similar LLM library)
 
 # --- Configuration ---
-# You'll replace this with your actual Google Sheet URL
-GOOGLE_SHEET_URL = "YOUR_GOOGLE_SHEET_URL_HERE" # e.g., "https://docs.google.com/spreadsheets/d/1Bgi710Gg4Vb9F_g9oW5jA_g9oW5jA_g9oW5jA_g9oW5jA/edit#gid=0"
-SERVICE_ACCOUNT_FILE = "service_account.json" # Make sure this file is in your project directory
+# IMPORTANT: Replace with your actual Google Sheet URL
+GOOGLE_SHEET_URL = "YOUR_GOOGLE_SHEET_URL_HERE"
+# For local development, place service_account.json in the same directory.
+# For Streamlit Cloud, use st.secrets for both service account and API keys.
+SERVICE_ACCOUNT_FILE = "service_account.json"
+
+# --- Initialize AI Models ---
+# Load a pre-trained Sentence Transformer model for embeddings
+# 'all-MiniLM-L6-v2' is a good balance of size and performance for many tasks.
+@st.cache_resource # Cache the model to avoid reloading on every rerun
+def load_embedding_model():
+    return SentenceTransformer('all-MiniLM-L6-v2')
+
+embedder = load_embedding_model()
+
+# Initialize OpenAI Client if API key is available
+openai_client = None
+if "OPENAI_API_KEY" in st.secrets:
+    openai_client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+else:
+    st.warning("OpenAI API key not found in Streamlit secrets. AI summary generation will be disabled.")
+
 
 # --- Helper Functions ---
 
@@ -19,96 +41,118 @@ SERVICE_ACCOUNT_FILE = "service_account.json" # Make sure this file is in your p
 def load_data_from_google_sheets():
     """Loads product data from the Google Sheet."""
     try:
-        # Authenticate with Google Sheets using the service account
-        gc = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
+        # For Streamlit Cloud deployment, use st.secrets for the service account info
+        if "service_account_info" in st.secrets:
+            gc = gspread.service_account_from_dict(st.secrets["service_account_info"])
+        else:
+            gc = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
         
-        # Open the Google Sheet by its URL or title
-        # If using URL, ensure it's the full URL
-        # If using title, ensure your sheet title is unique
-        sh = gc.open_by_url(GOOGLE_SHEET_URL) # or gc.open("Butler Coffee Lab Products Sheet")
-        
-        # Select the first worksheet
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
         worksheet = sh.worksheet("Sheet1") # Replace "Sheet1" with your actual sheet name if different
         
-        # Get all records as a list of dictionaries
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
         
         # Convert column names to a consistent format (e.g., lowercase, no spaces)
         df.columns = df.columns.str.replace(' ', '_').str.lower()
         
-        # Ensure essential columns exist
         required_cols = ['name', 'category_/_type', 'short_description', 'long_description', 'price', 'bcl_website_link']
         for col in required_cols:
             if col not in df.columns:
                 st.error(f"Missing required column in Google Sheet: '{col}'. Please check your sheet headers.")
-                return pd.DataFrame() # Return empty DataFrame on error
+                return pd.DataFrame() 
         
+        # Ensure 'brew_method' and 'roast_level' columns exist or create placeholders
+        if 'brew_method' not in df.columns:
+            st.warning("Column 'brew_method' not found. Please add it to your Google Sheet.")
+            df['brew_method'] = "" # Add an empty column
+        if 'roast_level' not in df.columns:
+            st.warning("Column 'roast_level' not found. Please add it to your Google Sheet for coffee products.")
+            df['roast_level'] = "" # Add an empty column
+
         return df
     except Exception as e:
         st.error(f"Error loading data from Google Sheets: {e}")
-        st.info("Please ensure your `service_account.json` is correct and the sheet is shared with the service account email.")
+        st.info("Please ensure your `service_account.json` is correct (or secrets are set) and the sheet is shared with the service account email.")
         return pd.DataFrame()
 
-def generate_tags(description):
-    """Generates a list of tags from product descriptions."""
-    # This is a basic example. You can expand this with more sophisticated NLP
-    # or a predefined list of keywords specific to coffee/tea flavors.
-    keywords = [
-        "chocolate", "nutty", "smooth", "fruity", "caramel", "bold", "bright",
-        "citrus", "floral", "spicy", "earthy", "roasty", "sweet", "mellow",
-        "velvet", "crisp", "clean", "rich", "balanced", "smoky", "cacao",
-        "berry", "apple", "peach", "vanilla", "honey", "maple", "toffee",
-        "grapefruit", "lemon", "lime", "almond", "hazelnut", "pecan", "walnut",
-        "cherry", "plum", "currant", "dark chocolate", "milk chocolate", "cocoa"
-    ]
-    
-    found_tags = []
-    text = description.lower()
-    for keyword in keywords:
-        if re.search(r'\b' + re.escape(keyword) + r'\b', text):
-            found_tags.append(keyword)
-    return list(set(found_tags)) # Return unique tags
+# No longer generating static tags. We'll use embeddings of descriptions.
+# def generate_tags(description):
+#     """Generates a list of tags from product descriptions."""
+#     # ... (previous logic, but we're moving to embeddings) ...
+#     return list(set(found_tags))
 
 @st.cache_data(ttl=3600*24) # Cache images for a day
 def scrape_image(url):
     """Scrapes the main product image from a given URL."""
     try:
         response = requests.get(url, timeout=10)
-        response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
+        response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Common selectors for product images. You might need to inspect BCL's site specifically.
-        # Look for <img class="product-image"> or <img data-image-id="main-product-image"> etc.
-        img_tag = soup.find('img', class_=lambda x: x and ('product-image' in x or 'main-image' in x))
-        if not img_tag:
-             img_tag = soup.find('meta', property='og:image') # Try Open Graph meta tag
-             if img_tag:
-                 return img_tag.get('content')
+        # Prioritize Open Graph meta tag, then common img selectors
+        img_tag = soup.find('meta', property='og:image')
+        if img_tag and img_tag.get('content'):
+            return img_tag.get('content')
         
-        if img_tag and img_tag.get('src'):
-            # Ensure the URL is absolute
-            src = img_tag.get('src')
-            if not src.startswith(('http', 'https')):
-                # Attempt to construct absolute URL if relative
-                base_url = url.split('/')[0] + '//' + url.split('/')[2]
-                src = f"{base_url}{src}" if src.startswith('/') else f"{base_url}/{src}"
-            return src
-        elif img_tag and img_tag.get('data-src'): # Sometimes images use data-src
-             src = img_tag.get('data-src')
-             if not src.startswith(('http', 'https')):
-                base_url = url.split('/')[0] + '//' + url.split('/')[2]
-                src = f"{base_url}{src}" if src.startswith('/') else f"{base_url}/{src}"
-             return src
+        img_tag = soup.find('img', class_=lambda x: x and ('product-image' in x or 'main-image' in x or 'wp-post-image' in x))
+        if not img_tag:
+            img_tag = soup.find('img', src=re.compile(r'(product|thumbnail|image)')) # Broader search
+
+        if img_tag:
+            src = img_tag.get('src') or img_tag.get('data-src')
+            if src:
+                if not src.startswith(('http', 'https')):
+                    # Attempt to construct absolute URL
+                    from urllib.parse import urljoin
+                    src = urljoin(url, src)
+                return src
         
         st.warning(f"Could not find a suitable image for {url}. Please check the URL or provide a more specific selector.")
-        return None # No image found
+        return None
     except requests.exceptions.RequestException as e:
         st.error(f"Error scraping image from {url}: {e}")
         return None
     except Exception as e:
         st.error(f"An unexpected error occurred while scraping image from {url}: {e}")
         return None
+
+# --- AI Summary Generation ---
+def generate_ai_summary(user_flavor_input, recommended_products_df):
+    if not openai_client:
+        return "AI summary not available. Please configure your OpenAI API key."
+
+    product_names = recommended_products_df['name'].tolist()
+    product_descriptions = recommended_products_df['short_description'].tolist()
+    
+    prompt = f"""
+    You are a playful and mission-driven barista for Butler Coffee Lab.
+    Based on the user's input flavor preferences: "{user_flavor_input}"
+    And the following recommended products:
+    {', '.join([f'{name}: {desc}' for name, desc in zip(product_names, product_descriptions)])}
+
+    Write a short, playful, and inspiring 3-sentence summary that captures the user's taste profile and connects it to Butler Coffee Lab's mission.
+    Example: "You love mellow mornings with notes of chocolate and caramel. This lineup is cozy, smooth, and just a little nutty—like your perfect Sunday. Each sip supports inclusive employment. Donate here!"
+
+    Your summary:
+    """
+    try:
+        response = openai_client.chat.completions.create(
+            model="gpt-3.5-turbo", # Or "gpt-4" for better quality
+            messages=[
+                {"role": "system", "content": "You are a helpful, creative, and playful barista for Butler Coffee Lab."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=150,
+            temperature=0.7 # Creativity level
+        )
+        return response.choices[0].message.content.strip()
+    except openai.APIError as e:
+        st.error(f"OpenAI API error: {e}")
+        return "Failed to generate AI summary. Please try again later."
+    except Exception as e:
+        st.error(f"An unexpected error occurred during AI summary generation: {e}")
+        return "Failed to generate AI summary. Please try again later."
 
 
 # --- Streamlit App ---
@@ -205,11 +249,20 @@ st.markdown("### Find your perfect brew, support a great cause!")
 df_products = load_data_from_google_sheets()
 
 if not df_products.empty:
-    # --- Generate Tags (if not already present or if you want to re-generate) ---
-    # This assumes 'long_description' is the best source for tags.
-    # Adjust column name if necessary.
-    df_products['tags'] = df_products['long_description'].apply(generate_tags)
-    
+    # Generate embeddings for product descriptions
+    # Using 'long_description' for richer semantic information
+    # Filter out empty descriptions before encoding
+    df_products['embedding'] = df_products['long_description'].apply(
+        lambda x: embedder.encode(x, convert_to_tensor=True) if pd.notna(x) and x.strip() != '' else None
+    )
+    # Remove products without a valid embedding (e.g., if description was empty)
+    df_products = df_products.dropna(subset=['embedding']).reset_index(drop=True)
+
+    if df_products.empty:
+        st.error("No products available after generating embeddings. Please check your product descriptions.")
+        st.stop()
+
+
     st.sidebar.header("Tell us your preferences!")
 
     with st.sidebar.form("flavor_form"):
@@ -229,7 +282,6 @@ if not df_products.empty:
             placeholder="e.g., chocolate, caramel, fruity, bold"
         )
 
-        # Only show roast preference if Coffee is selected
         roast_preference = "No preference"
         if drink_type == "Coffee":
             st.markdown("**4. How do you like your coffee roasted?**")
@@ -246,70 +298,76 @@ if not df_products.empty:
         submitted = st.form_submit_button("Find My Perfect Match!")
 
     if submitted:
-        # --- AI-Powered Recommendations Logic (Placeholder) ---
-        # This is where your matching logic goes.
-        # For now, it's a simple filter based on basic criteria.
-
+        # --- AI-Powered Recommendations Logic ---
+        
+        # Apply initial filters based on explicit choices
         filtered_products = df_products[
             (df_products['category_/_type'].str.contains(drink_type, case=False, na=False)) &
-            (df_products['brew_method'].fillna('').apply(lambda x: any(b in x for b in brew_method))) # Assuming 'brew_method' column exists and is a string of methods
+            (df_products['brew_method'].fillna('').apply(lambda x: any(b.lower() in x.lower() for b in brew_method)))
         ]
 
         if drink_type == "Coffee" and roast_preference != "No preference":
             filtered_products = filtered_products[
-                filtered_products['roast_level'].str.contains(roast_preference, case=False, na=False) # Assuming 'roast_level' column exists
+                filtered_products['roast_level'].str.contains(roast_preference, case=False, na=False)
             ]
         
-        if surprise_me:
-            if not filtered_products.empty:
-                recommendations = filtered_products.sample(min(5, len(filtered_products)))
-            else:
-                recommendations = pd.DataFrame()
-        else:
-            # Basic flavor matching logic
-            if flavor_input:
-                user_flavor_tags = [tag.strip().lower() for tag in flavor_input.split(',')]
-                
-                # Filter by matching any of the user's input tags
-                # This logic can be greatly improved using similarity measures (e.g., cosine similarity)
-                # with more advanced NLP embeddings if you want "AI" flavor matching.
-                def matches_flavor(product_tags, user_tags):
-                    if not product_tags: return False
-                    return any(ut in pt for ut in user_tags for pt in product_tags)
+        if filtered_products.empty:
+            st.warning("No products found matching your basic drink type, brew method, and roast preferences.")
+            st.stop()
 
-                recommendations = filtered_products[
-                    filtered_products['tags'].apply(lambda x: matches_flavor(x, user_flavor_tags))
-                ]
+        recommendations = pd.DataFrame()
+        if surprise_me:
+            recommendations = filtered_products.sample(min(5, len(filtered_products)), random_state=42) # Fixed seed for reproducibility
+        else:
+            if flavor_input and flavor_input.strip() != "":
+                # Generate embedding for user's flavor input
+                user_embedding = embedder.encode(flavor_input, convert_to_tensor=True)
+                
+                # Calculate cosine similarity with all filtered product embeddings
+                similarities = util.cos_sim(user_embedding, filtered_products['embedding'].tolist())
+                
+                # Add similarities to DataFrame and sort
+                filtered_products['similarity'] = similarities[0].cpu().numpy()
+                
+                # Get top N recommendations based on similarity
+                recommendations = filtered_products.sort_values(by='similarity', ascending=False).head(5)
                 
                 if recommendations.empty:
-                    st.warning("No direct matches found for your flavor preferences. Showing some general recommendations.")
-                    # Fallback to general filtered products if no flavor match
-                    recommendations = filtered_products.sample(min(3, len(filtered_products))) if not filtered_products.empty else pd.DataFrame()
+                    st.warning("No close flavor matches found. Showing general recommendations.")
+                    recommendations = filtered_products.sample(min(3, len(filtered_products)), random_state=42)
             else:
-                # If no flavor input and not surprise me, show some general picks
-                recommendations = filtered_products.sample(min(3, len(filtered_products))) if not filtered_products.empty else pd.DataFrame()
+                # If no flavor input and not surprise me, show some random general picks
+                recommendations = filtered_products.sample(min(3, len(filtered_products)), random_state=42)
 
         # --- Display Results ---
         if not recommendations.empty:
             st.markdown("---")
             st.markdown('<p class="big-font">Your Personalized Butler Coffee Lab Picks:</p>', unsafe_allow_html=True)
 
-            # Flavor Profile Summary
-            st.markdown("""
+            # Flavor Profile Summary (AI-powered)
+            ai_summary_text = generate_ai_summary(flavor_input, recommendations)
+            st.markdown(f"""
             <p style="font-size:16px; color:#555555;">
-            You love mellow mornings with notes of chocolate and caramel.
-            This lineup is cozy, smooth, and just a little nutty—like your perfect Sunday.
-            Each sip supports inclusive employment. <a href="#" style="color:#B35F3A; font-weight:bold;">Donate here!</a>
+            {ai_summary_text}
             </p>
             """, unsafe_allow_html=True)
 
 
             for _, product in recommendations.iterrows():
                 product_name = product.get('name', 'N/A')
-                short_desc = product.get('short_description', product.get('long_description', 'A delightful product.')[:100] + '...')
+                # Shortened, rewritten description - you might consider another LLM call here
+                # or just use short_description if it's already concise.
+                display_description = product.get('short_description', product.get('long_description', 'A delightful product.')[:100] + '...')
                 price = product.get('price', 'N/A')
                 bcl_link = product.get('bcl_website_link', '#')
-                product_tags = ", ".join(product.get('tags', []))
+                
+                # Display relevant "tags" (can be inferred from description or specific keywords)
+                # For this version, we're relying on semantic similarity, so explicit tags are less critical for matching
+                # but can be displayed if a 'tags' column exists from the sheet or is generated
+                # For now, let's just use a simplified representation of the long description if no specific 'tags' column.
+                product_tags = product.get('long_description', '')
+                if len(product_tags) > 100:
+                    product_tags = product_tags[:100] + "..." # Truncate for display
 
                 # Scrape image (this might be slow, consider pre-scraping or using a CDN)
                 image_url = scrape_image(bcl_link) if bcl_link and bcl_link != '#' else None
@@ -319,9 +377,9 @@ if not df_products.empty:
                     {"<img src='" + image_url + "' alt='" + product_name + "' />" if image_url else ""}
                     <div class="product-card-details">
                         <h4>{product_name}</h4>
-                        <p>{short_desc}</p>
+                        <p>{display_description}</p>
                         <p class="price">${price}</p>
-                        <p class="tags">Flavor Tags: {product_tags if product_tags else "None"}</p>
+                        <p class="tags">Description snippet: {product_tags}</p>
                     </div>
                     <div class="buy-button">
                         <a href="{bcl_link}" target="_blank">Buy Now</a>
@@ -333,7 +391,7 @@ if not df_products.empty:
             st.warning("Sorry, no products matched your specific criteria. Please try adjusting your preferences!")
 
 else:
-    st.error("Could not load product data. Please check your Google Sheet URL, service account setup, and column names.")
+    st.error("Could not load product data or no products with valid embeddings found. Please check your Google Sheet URL, service account setup, column names, and product descriptions.")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("Made with ❤️ for Butler Coffee Lab.")
