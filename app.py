@@ -178,7 +178,7 @@ st.markdown("""
 <style>
     /* General body and text color */
     .stApp {
-        background-color: #FDF7E7; /* Light pastel background */
+        background-color: #FFFFFF; /* Light pastel background */
         color: #333333; /* Dark gray for general text */
     }
     
