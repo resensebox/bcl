@@ -176,12 +176,10 @@ if not df_products.empty:
     with st.sidebar:
         st.header("Let’s find your perfect brew!")
 
-        st.markdown("---")
-        st.subheader("Step 1: What are you looking for?")
-        drink_type = st.radio("Choose a category:", ["Coffee", "Tea", "Other"], key="drink_type_radio")
+        # Removed Step 1: Category Selection
 
         st.markdown("---")
-        st.subheader("Step 2: How do you brew?")
+        st.subheader("Step 1: How do you brew?") # Renumbered to Step 1
         
         brew_grind_options_user = [] 
         
@@ -190,17 +188,16 @@ if not df_products.empty:
             brew_grind_options_user.append("Pods") 
         
         default_other_grind = []
-        if drink_type == "Coffee":
-            coffee_products = df_products[df_products['category'].str.contains('Coffee', case=False, na=False)]
-            # Normalize grind types from data for comparison with user selections
-            available_grind_types_normalized = coffee_products['grind'].str.strip().str.lower().unique()
-            if 'ground' in available_grind_types_normalized:
-                default_other_grind.append("Ground")
-            if 'whole bean' in available_grind_types_normalized:
-                default_other_grind.append("Whole Bean")
-            
-            if not default_other_grind and not uses_keurig:
-                default_other_grind = ["Ground"]
+        # Populate default grind options based on available data, regardless of category
+        available_grind_types_normalized = df_products['grind'].str.strip().str.lower().unique()
+        if 'ground' in available_grind_types_normalized:
+            default_other_grind.append("Ground")
+        if 'whole bean' in available_grind_types_normalized:
+            default_other_grind.append("Whole Bean")
+        
+        # If no default other grind types are found but Keurig isn't selected, default to Ground
+        if not default_other_grind and not uses_keurig:
+            default_other_grind = ["Ground"]
         
         selected_other_grind_types = st.multiselect(
             "Select other grind type(s):",
@@ -214,7 +211,7 @@ if not df_products.empty:
 
 
         st.markdown("---")
-        st.subheader("Step 3: Tell us about your ideal flavor.")
+        st.subheader("Step 2: Tell us about your ideal flavor.") # Renumbered to Step 2
 
         if 'ai_suggested_tags' not in st.session_state:
             st.session_state.ai_suggested_tags = []
@@ -242,7 +239,7 @@ if not df_products.empty:
                     ]
 
                     if ai_suggested_tags_filtered:
-                        st.session_state.ai_suggested_tags = ai_tags_filtered
+                        st.session_state.ai_suggested_tags = ai_suggested_tags_filtered
                         st.markdown(f"**We think you might like these flavors:** {', '.join(ai_suggested_tags_filtered)}")
                         agree_to_ai_tags = st.radio(
                             "Are these on point?",
@@ -275,21 +272,19 @@ if not df_products.empty:
             st.session_state.explore_categories = False
 
         st.markdown("---")
-        st.subheader("Step 4: Roast Preference (for Coffee)")
-        roast_preference = "No preference"
-        if drink_type == "Coffee":
-            roast_preference = st.radio(
-                "Roast/Intensity:",
-                ["Light", "Medium", "Dark", "No preference"],
-                horizontal=True,
-                index=3,
-                key="roast_preference_radio"
-            )
-        else:
-            st.info("Roast preference is typically for coffee. Select 'Coffee' above to see this option.")
+        st.subheader("Step 3: Roast Preference") # Renumbered to Step 3
+        # Removed conditional roast preference based on drink type
+        roast_preference = st.radio(
+            "Roast/Intensity (primarily for Coffee):",
+            ["Light", "Medium", "Dark", "No preference"],
+            horizontal=True,
+            index=3,
+            key="roast_preference_radio"
+        )
+        # Removed else block for roast preference info
 
         st.markdown("---")
-        st.subheader("Step 5: Ready to discover?")
+        st.subheader("Step 4: Ready to discover?") # Renumbered to Step 4
         surprise_me = st.checkbox("Surprise Me!", key="surprise_me_checkbox")
         submitted = st.button("Find My Perfect Match!", type="primary", key="find_match_button")
 
@@ -301,59 +296,28 @@ if not df_products.empty:
             st.markdown("---")
             st.markdown("### Debugging Info (For Developers Only):")
             
-            # Highlight the Grind Filter issue clearly
-            # This logic remains as it helps diagnose data issues
+            # Simplified Debugging Info for Grind Filter - now it's the primary filter
             if 'grind' in current_filtered_products.columns and \
-               'pods' in current_filtered_products['grind'].str.strip().str.lower().unique().tolist() and \
-               any(g_opt in ['ground', 'whole bean'] for g_opt in brew_grind_options_user):
-                st.error("""
-                **ATTENTION: GRIND FILTER ISSUE DETECTED!**
-                
-                The debugging info shows that **after the initial category filter, your dataset predominantly contains 'Pods' coffee, but you selected 'Ground' or 'Whole Bean' grind type.**
-                
-                **This indicates that 'Ground' or 'Whole Bean' coffee products in your Google Sheet might be categorized differently (e.g., as 'Bags' instead of 'Coffee').**
-                
-                The filter logic has been adjusted to account for 'Bags' when 'Coffee' is selected with 'Ground' or 'Whole Bean' grinds. If you still don't see results, please confirm your Google Sheet's 'Category' and 'Grind' columns are accurate for your coffee products.
-                """)
+               not brew_grind_options_user and \
+               (current_filtered_products['grind'].str.strip().str.lower().str.contains('pod', na=False).any() or \
+                current_filtered_products['grind'].str.strip().str.lower().str.contains('ground', na=False).any() or \
+                current_filtered_products['grind'].str.strip().str.lower().str.contains('whole bean', na=False).any()):
+                st.info("No specific grind type selected by user. App will filter to show all products based on their listed grind type (Pods, Ground, Whole Bean).")
+
 
             st.write(f"**Initial DataFrame shape:** {current_filtered_products.shape}")
             st.write(f"**Unique 'Grind' values (from raw data):** {current_filtered_products['grind'].unique().tolist()}")
             st.markdown("---")
 
 
-            # 1. Filter by Drink Type (Category) - MODIFIED TO INCLUDE "BAGS" FOR COFFEE GRINDS
-            if drink_type and drink_type != "Other":
-                category_mask = current_filtered_products['category'].str.contains(drink_type, case=False, na=False)
-                
-                # If "Coffee" is selected and user wants Ground/Whole Bean, also include "Bags" category
-                if drink_type == "Coffee" and any(g_opt in ['ground', 'whole bean'] for g_opt in brew_grind_options_user):
-                    bags_mask = current_filtered_products['category'].str.contains("Bags", case=False, na=False)
-                    category_mask = category_mask | bags_mask
-                
-                if category_mask.any():
-                    current_filtered_products = current_filtered_products[category_mask]
-                else:
-                    st.warning(f"No products found specifically for '{drink_type}' (and potentially 'Bags' for coffee). Proceeding with all categories to apply other filters.")
-                    current_filtered_products = df_products.copy() # Revert to full dataset if no matches for category
-            
-            st.write(f"**DataFrame shape after Category Filter:** {current_filtered_products.shape}")
-            # Show normalized unique grind values at this point
-            st.write(f"**Unique 'Grind' values (after Category Filter, normalized):** {current_filtered_products['grind'].str.strip().str.lower().unique().tolist()}")
-
-
-            # --- REWRITTEN GRIND FILTERING (Same as last version, as it correctly handles user input vs data) ---
+            # --- Grind Filter (now the primary filter) ---
             if brew_grind_options_user:
-                # Normalize the 'grind' column in the DataFrame for consistent matching
                 normalized_df_grind = current_filtered_products['grind'].str.strip().str.lower()
-                
-                # Create a boolean mask for products matching any of the user's selected grind types
                 grind_match_mask = pd.Series([False] * len(current_filtered_products), index=current_filtered_products.index)
                 
                 st.write(f"**User selected grind options (normalized):** {brew_grind_options_user}")
                 
                 for user_option in brew_grind_options_user:
-                    # Check if the normalized DataFrame grind value *contains* the normalized user option
-                    # This handles cases like "Ground (for Drip)" matching "ground"
                     grind_match_mask = grind_match_mask | normalized_df_grind.str.contains(user_option, na=False)
                 
                 temp_df_after_grind = current_filtered_products[grind_match_mask]
@@ -366,33 +330,21 @@ if not df_products.empty:
                     st.warning(f"No products found matching your selected brew/grind type(s): {', '.join([opt.capitalize() for opt in brew_grind_options_user])}. Adjusting recommendations based on other preferences.")
                     st.write(f"**DataFrame shape after Grind Filter (no match, reverted):** {current_filtered_products.shape}")
                     st.write(f"**Original 'Grind' values before this filter (sample):** {current_filtered_products['grind'].head(5).tolist()}")
-                    # No change to current_filtered_products if no match, effectively ignoring the filter for this step
                     pass 
-            else: # If no grind types are selected by the user
-                st.info("No brew method selected. Automatically excluding 'Pods' and showing all 'Ground'/'Whole Bean' products.")
-                normalized_df_grind = current_filtered_products['grind'].str.strip().str.lower()
-                # Exclude anything containing "pod" if no specific grind is selected
-                non_pod_mask = ~normalized_df_grind.str.contains("pod", na=False)
-                temp_df_after_non_pod_filter = current_filtered_products[non_pod_mask]
-                if not temp_df_after_non_pod_filter.empty:
-                    current_filtered_products = temp_df_after_non_pod_filter
-                    st.write(f"**DataFrame shape after Grind Filter (default non-pod):** {current_filtered_products.shape}")
-                    st.write(f"**'Grind' values of default non-pod products (sample):** {current_filtered_products['grind'].head(5).tolist()}")
-                else:
-                    st.warning("No non-pod products found based on other filters. Showing all products regardless of grind type.")
-                    st.write(f"**DataFrame shape after Grind Filter (default non-pod, no match, reverted):** {current_filtered_products.shape}")
-                    st.write(f"**Original 'Grind' values before this filter (sample):** {current_filtered_products['grind'].head(5).tolist()}")
-                    pass
+            else: # If no grind types are selected by the user, keep all products initially (before roast/flavor)
+                st.info("No brew method selected. Displaying all products for flavor/roast matching.")
+                st.write(f"**DataFrame shape after Grind Filter (no selection, all kept):** {current_filtered_products.shape}")
+                st.write(f"**Original 'Grind' values before this filter (sample):** {current_filtered_products['grind'].head(5).tolist()}")
 
 
-            # 3. Filter by Roast Preference (only for Coffee)
-            if drink_type == "Coffee" and roast_preference != "No preference":
+            # 2. Filter by Roast Preference (now renumbered to Step 2)
+            if roast_preference != "No preference": # Apply roast preference to all products, as category is removed
                 roast_mask = current_filtered_products['roast_level'].str.contains(roast_preference, case=False, na=False)
                 temp_df_after_roast = current_filtered_products[roast_mask]
                 if not temp_df_after_roast.empty:
                     current_filtered_products = temp_df_after_roast
                 else:
-                    st.warning(f"No coffee found with '{roast_preference}' roast level matching other criteria. Ignoring roast level filter.")
+                    st.warning(f"No products found with '{roast_preference}' roast level matching other criteria. Ignoring roast level filter.")
                     pass
             
             st.write(f"**DataFrame shape after Roast Filter:** {current_filtered_products.shape}")
@@ -406,7 +358,7 @@ if not df_products.empty:
                 if not current_filtered_products.empty:
                     recommendations = current_filtered_products.sample(min(5, len(current_filtered_products)), random_state=42)
                 else:
-                    st.warning("No products found matching your basic type and brew preferences for 'Surprise Me'. Showing top general favorites from all products.")
+                    st.warning("No products found matching your brew/roast preferences for 'Surprise Me'. Showing top general favorites from all products.")
                     recommendations = df_products.sample(min(5, len(df_products)), random_state=42)
 
             elif flavor_input:
@@ -506,7 +458,7 @@ if not df_products.empty:
                         st.caption("No image available.")
                 with col2:
                     st.subheader(row['name'])
-                    st.markdown(f"**Category:** {row['category']}")
+                    # st.markdown(f"**Category:** {row['category']}") # Removed Category display
                     if row['grind'].strip():
                         st.markdown(f"**Grind Type:** {row['grind']}")
                     if row['roast_level'].strip():
