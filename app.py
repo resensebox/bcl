@@ -250,7 +250,21 @@ if not df_products.empty:
                             if st.session_state['flavor_response'] is None:
                                 st.markdown(f"It sounds like you enjoy flavors like {', '.join(flavor_input)}. You might also like: {', '.join(new_tags)}")
                     except Exception as e:
-                        st.info("We're showing you a few of our favorite brews based on general preferences — try adjusting your flavor selections or just click 'Surprise Me' next time!")
+                        if recommendations.empty:
+                    st.info("We're showing you a few of our favorite brews based on general preferences — try adjusting your flavor selections or just click 'Surprise Me' next time!")
+                else:
+                    st.markdown("### Your Matches:")
+                    for _, row in recommendations.iterrows():
+                        if row['image_url'] and isinstance(row['image_url'], str) and row['image_url'].startswith("http"):
+                            try:
+                                st.image(row['image_url'], use_container_width=True)
+                            except:
+                                st.caption("Invalid image URL")
+                        else:
+                            st.caption("Invalid image URL")
+                        st.subheader(row['name'])
+                        st.caption(f"{row['short_description']} — ${row['price']}")
+                        st.markdown(f"[View Product]({row['bcl_website_link']})")
             st.info("We're showing you a few of our favorite brews based on general preferences — try adjusting your flavor selections or just click 'Surprise Me' next time!")
 else:
     st.error("There was a problem loading the product data. Please check the app configuration and try again later.")
