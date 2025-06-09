@@ -8,6 +8,7 @@ import json
 from openai import OpenAI
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
+import torch # Added for checking tensor type
 
 # --- 1. Streamlit Page Configuration (MUST BE THE FIRST ST. COMMAND) ---
 st.set_page_config(
