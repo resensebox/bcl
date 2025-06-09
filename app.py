@@ -117,15 +117,15 @@ if not df_products.empty:
         if tag.strip()
     ))
 
-    valid_descriptions = df_products['long_description'].fillna('').tolist()
-    cleaned_descriptions = [desc if desc.strip() != '' else 'general product description' for desc in valid_descriptions]
+    valid_descriptions = df_products['flavor_tags'].fillna('').tolist()
+    cleaned_descriptions = [desc if desc.strip() != '' else 'flavor unknown' for desc in valid_descriptions]
     all_embeddings = get_embeddings(cleaned_descriptions)
 
     if len(all_embeddings) != len(cleaned_descriptions):
         st.error("Mismatch in embeddings. Please check data format.")
         st.stop()
 
-    df_products['long_description_embedding'] = all_embeddings
+    df_products['flavor_tag_embedding'] = all_embeddings
 
     st.sidebar.header("Tell us your preferences!")
 
@@ -199,12 +199,12 @@ if not df_products.empty:
                     st.warning("No products found matching your basic type and brew preferences for 'Surprise Me'.")
             elif flavor_input:
                 search_text = ", ".join(flavor_input)
-                products_for_similarity = filtered_products[filtered_products['long_description_embedding'].apply(lambda x: hasattr(x, 'shape') and x.shape[0] > 0)].copy()
+                products_for_similarity = filtered_products[filtered_products['flavor_tag_embedding'].apply(lambda x: hasattr(x, 'shape') and x.shape[0] > 0)].copy()
 
                 if not products_for_similarity.empty:
                     try:
                         user_embedding = get_embeddings([search_text])[0]
-                        product_embeddings = [e for e in products_for_similarity['long_description_embedding'] if hasattr(e, 'shape') and e.shape[0] > 0]
+                        product_embeddings = [e for e in products_for_similarity['flavor_tag_embedding'] if hasattr(e, 'shape') and e.shape[0] > 0] > 0]
                         cosine_matrix = util.cos_sim(user_embedding, product_embeddings).detach().cpu().numpy()
                         scores = cosine_matrix[0] if cosine_matrix.shape[0] > 0 else []
                         products_for_similarity = products_for_similarity.head(len(scores)).copy()
