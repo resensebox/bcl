@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 # --- 2. Configuration & Initialization ---
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1VBnG4kfGOUN3iVH1n14qOUnzivhiU_SsOclCAcWkFI8/edit?usp=sharing"
+GOOGLE_SHEET_ID = "1VBnG4kfGOUN3iVH1n14qOUnzivhiU_SsOclCAcWkFI8"
 
 try:
     openai_api_key = st.secrets["openai"]["api_key"]
@@ -44,7 +44,7 @@ def load_data_from_google_sheets():
             st.error("Google service account secrets not found. Please configure 'google_service_account' in your Streamlit secrets.")
             st.stop()
 
-        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+        sh = gc.open_by_key(GOOGLE_SHEET_ID)
         worksheet = sh.worksheet("Sheet1")
 
         data = worksheet.get_all_records()
@@ -66,7 +66,7 @@ def load_data_from_google_sheets():
         return df
     except Exception as e:
         st.error(f"Uh oh! Couldn't load data from Google Sheets. Error: {e}")
-        st.info("Double-check your Google Sheet URL, and ensure the service account email has Viewer access to the sheet.")
+        st.info("Double-check your Google Sheet ID, and ensure the service account email has Viewer access to the sheet.")
         return pd.DataFrame()
 
 @st.cache_data(ttl=60*60*24)
