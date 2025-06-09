@@ -252,7 +252,6 @@ if not df_products.empty:
                     except Exception as e:
                         st.warning(f"Error during flavor recommendation fallback: {e}")
                         if recommendations.empty:
-                    if recommendations.empty:
     st.info("We're showing you a few of our favorite brews based on general preferences — try adjusting your flavor selections or just click 'Surprise Me' next time!")
                 else:
                     st.markdown("### Your Matches:")
