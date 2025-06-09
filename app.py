@@ -17,63 +17,93 @@ st.set_page_config(
     menu_items=None
 )
 
-# --- Apply Custom CSS for White Background and Dark Text (Attempting a more robust method) ---
-# This CSS attempts to set a light theme with dark text more broadly.
+# --- Apply Custom CSS for White Background (Main) and Dark Sidebar with White Text ---
 st.markdown(
     """
     <style>
-    /* Global settings for the app */
+    /* Overall app background and default text color for main content */
     .stApp {
-        background-color: #FFFFFF; /* White background */
-        color: #1A1A1A; /* Very dark gray text for contrast */
+        background-color: #FFFFFF; /* White background for main content */
+        color: #1A1A1A; /* Very dark gray text for main content */
     }
 
-    /* Header background */
+    /* Header background - keep it white for consistency with main content */
     .stApp > header {
         background-color: #FFFFFF;
     }
 
-    /* Main content area */
+    /* Main content area - ensure it's white background and dark text */
     .st-emotion-cache-z5fcl4 { /* This class is often for the main content block */
         background-color: #FFFFFF;
+        color: #1A1A1A;
     }
 
-    /* Sidebar specific colors */
+    /* Sidebar specific colors: Dark background, White text */
     .st-emotion-cache-1c7y2kl { /* This is often the main sidebar container */
-        background-color: #F8F8F8; /* Slightly off-white for sidebar distinction */
-        color: #1A1A1A;
+        background-color: #1A1A1A; /* Dark background for sidebar */
+        color: #FFFFFF; /* White text for sidebar */
     }
     .st-emotion-cache-1dp5vir { /* Sidebar elements/padding */
-        background-color: #F8F8F8;
+        background-color: #1A1A1A; /* Dark background for sidebar */
     }
 
-    /* Ensure all text elements inherit or are set to dark */
+    /* Ensure all text elements within the sidebar are white */
+    .st-emotion-cache-1c7y2kl p, 
+    .st-emotion-cache-1c7y2kl li, 
+    .st-emotion-cache-1c7y2kl div, 
+    .st-emotion-cache-1c7y2kl .stMarkdown, 
+    .st-emotion-cache-1c7y2kl label, 
+    .st-emotion-cache-1c7y2kl h1, 
+    .st-emotion-cache-1c7y2kl h2, 
+    .st-emotion-cache-1c7y2kl h3, 
+    .st-emotion-cache-1c7y2kl h4, 
+    .st-emotion-cache-1c7y2kl h5, 
+    .st-emotion-cache-1c7y2kl h6, 
+    .st-emotion-cache-1c7y2kl span {
+        color: #FFFFFF !important; /* Force white text within the sidebar */
+    }
+
+    /* Input widgets text color (within sidebar) */
+    .st-emotion-cache-1c7y2kl .stTextInput > div > div > input,
+    .st-emotion-cache-1c7y2kl .stTextArea > div > div > textarea,
+    .st-emotion-cache-1c7y2kl .stMultiSelect > div > div,
+    .st-emotion-cache-1c7y2kl .stSelectbox > div > div > div > div > div.st-emotion-cache-nahz7x {
+        color: #FFFFFF; /* White text for input widgets in sidebar */
+        background-color: #333333; /* Slightly lighter dark for input fields */
+    }
+    
+    /* Ensure selectbox dropdown options have proper contrast */
+    div[data-baseweb="select"] > div {
+        background-color: #FFFFFF; /* White background for dropdown list */
+        color: #1A1A1A; /* Dark text for dropdown list items */
+    }
+    div[data-baseweb="select"] div[role="option"] {
+        color: #1A1A1A; /* Dark text for individual options */
+    }
+    div[data-baseweb="select"] div[role="option"]:hover {
+        background-color: #E0E0E0; /* Light hover background */
+    }
+
+
+    /* For selected multiselect options (the chips) within the sidebar */
+    .st-emotion-cache-1c7y2kl .stMultiSelect div.st-emotion-cache-1h6dgbk { /* Chip background */
+        background-color: #555555; /* A darker grey for the chip background */
+        color: #FFFFFF; /* White text on the chip */
+    }
+
+    /* Radio button and checkbox labels (within sidebar) */
+    .st-emotion-cache-1c7y2kl .stRadio > label, 
+    .st-emotion-cache-1c7y2kl .stCheckbox > label {
+        color: #FFFFFF;
+    }
+    
+    /* General text elements in main content, just to be safe */
     body, p, li, div, .stMarkdown, label, h1, h2, h3, h4, h5, h6, span {
-        color: #1A1A1A; /* Apply dark gray to all common text elements */
+        color: #1A1A1A; /* Ensure main content text is dark */
     }
-
-    /* Input widgets text color */
-    .stTextInput > div > div > input,
-    .stTextArea > div > div > textarea,
-    .stMultiSelect > div > div,
-    .stSelectbox > div > div > div > div > div.st-emotion-cache-nahz7x { /* Targeting selectbox text */
-        color: #1A1A1A;
-    }
-
-    /* Specific to radio buttons and checkboxes, to ensure label text is dark */
-    .stRadio > label, .stCheckbox > label {
-        color: #1A1A1A;
-    }
-
-    /* If warnings/info boxes become unreadable, adjust their text color explicitly */
+    /* Warning/info boxes in main content */
     .st-emotion-cache-13ln4gm { /* Streamlit's default class for warning/info/success boxes */
         color: #1A1A1A; /* Ensure warning text is black */
-    }
-
-    /* For selected multiselect options (the chips) */
-    .stMultiSelect div.st-emotion-cache-1h6dgbk { /* Chip background */
-        background-color: #E0E0E0; /* A light grey for the chip background */
-        color: #1A1A1A; /* Dark text on the chip */
     }
     </style>
     """,
@@ -303,7 +333,7 @@ if not df_products.empty:
                     ]
 
                     if ai_suggested_tags_filtered:
-                        st.session_state.ai_suggested_tags = ai_tags_filtered
+                        st.session_state.ai_suggested_tags = ai_suggested_tags_filtered
                         st.markdown(f"**We think you might like these flavors:** {', '.join(ai_suggested_tags_filtered)}")
                         agree_to_ai_tags = st.radio(
                             "Are these on point?",
@@ -361,6 +391,25 @@ if not df_products.empty:
 
             st.markdown("---")
             st.markdown("### Debugging Info (For Developers Only):")
+            
+            # Highlight the Grind Filter issue clearly
+            if 'grind' in current_filtered_products.columns and \
+               'pods' in current_filtered_products['grind'].str.strip().str.lower().unique().tolist() and \
+               'ground' in brew_grind_options_user: # Check if 'ground' is in user selection
+                st.error("""
+                **ATTENTION: GRIND FILTER ISSUE DETECTED!**
+                
+                The debugging info shows that **after the Category filter, your dataset only contains 'Pods' coffee, but you selected 'Ground' (or similar) grind type.**
+                
+                **This means there are NO 'Ground' (or 'Whole Bean') coffee products in your Google Sheet that match your selected category.**
+                
+                Please check your Google Sheet for products where:
+                1.  **Category is 'Coffee'** (or your selected category)
+                2.  **Grind is 'Ground' or 'Whole Bean'** (or your desired grind type).
+                
+                The filter logic is working, but it can only filter the data it receives.
+                """)
+
             st.write(f"**Initial DataFrame shape:** {current_filtered_products.shape}")
             st.write(f"**Unique 'Grind' values (from raw data):** {current_filtered_products['grind'].unique().tolist()}")
             st.markdown("---")
