@@ -17,24 +17,37 @@ st.set_page_config(
     menu_items=None
 )
 
-# --- Apply Custom CSS for White Background ---
+# --- Apply Custom CSS for White Background and Black Text ---
 st.markdown(
     """
     <style>
     .stApp {
         background-color: white;
+        color: black; /* Set default text color to black */
     }
     .stApp > header {
         background-color: white;
     }
-    .st-emotion-cache-z5fcl4 { /* This targets the main content block, adjust if needed for your specific Streamlit version */
+    /* Specific targets for main content and sidebar, adjust if needed for your Streamlit version */
+    .st-emotion-cache-z5fcl4 { /* Main content block */
         background-color: white;
+        color: black;
     }
-    .st-emotion-cache-1c7y2kl { /* This targets the sidebar background */
-        background-color: #f0f2f6; /* A very light gray for sidebar to distinguish, or pure white: white */
+    .st-emotion-cache-1c7y2kl { /* Sidebar background */
+        background-color: white; /* Changed to pure white for consistency */
+        color: black;
     }
-    .st-emotion-cache-1dp5vir { /* sidebar elements */
+    .st-emotion-cache-1dp5vir { /* Sidebar elements */
         background-color: white;
+        color: black;
+    }
+    /* Ensure markdown text is black */
+    p, li, div, .stMarkdown {
+        color: black;
+    }
+    /* Ensure header text is black */
+    h1, h2, h3, h4, h5, h6 {
+        color: black;
     }
     </style>
     """,
@@ -80,27 +93,27 @@ def load_data_from_google_sheets():
         # Sanitize column names
         df.columns = [re.sub(r'[^a-z0-9_]', '', col.lower().replace(' ', '_')) for col in df.columns]
 
-        # Added 'grind_type' to required columns
-        required_cols = ['name', 'category', 'short_description', 'long_description', 'price', 'bcl_website_link', 'grind_type']
+        # Updated 'grind_type' to 'grind' as per your change
+        required_cols = ['name', 'category', 'short_description', 'long_description', 'price', 'bcl_website_link', 'grind']
         for col in required_cols:
             if col not in df.columns:
-                st.error(f"Missing required column in Google Sheet: '{col}'. Please check your sheet headers (e.g., 'Category' becomes 'category', 'Grind Type' becomes 'grind_type').")
+                st.error(f"Missing required column in Google Sheet: '{col}'. Please check your sheet headers (e.g., 'Category' becomes 'category', 'Grind' becomes 'grind').")
                 return pd.DataFrame()
 
         # Ensure essential columns exist, add if missing
-        if 'brew_method' not in df.columns:
-            df['brew_method'] = '' # Keep for compatibility, though grind_type is preferred
+        if 'brew_method' not in df.columns: # Keeping for now, but will primarily use 'grind'
+            df['brew_method'] = ''
         if 'roast_level' not in df.columns:
             df['roast_level'] = ''
         if 'image_url' not in df.columns:
             df['image_url'] = ''
 
         # Convert relevant columns to string type to prevent errors during processing
-        for col in ['name', 'category', 'short_description', 'long_description', 'brew_method', 'roast_level', 'bcl_website_link', 'image_url', 'grind_type', 'price']:
+        for col in ['name', 'category', 'short_description', 'long_description', 'brew_method', 'roast_level', 'bcl_website_link', 'image_url', 'grind', 'price']: # Changed 'grind_type' to 'grind'
             if col in df.columns:
                 df[col] = df[col].apply(lambda x: str(x) if pd.notna(x) else '')
             else:
-                df[col] = '' # Add missing columns as empty strings
+                df[col] = ''
 
 
         # Attempt to convert price to numeric, coercing errors
@@ -117,7 +130,6 @@ def get_embeddings(texts):
     """Generates embeddings for a list of texts."""
     valid_texts = [str(t) for t in texts if pd.notna(t) and t.strip() != '']
     if not valid_texts:
-        # Return zero vectors with correct dimension for the number of input texts
         return [torch.zeros(embedder.get_sentence_embedding_dimension()) for _ in range(len(texts))]
     
     embeddings = embedder.encode(valid_texts, convert_to_tensor=True)
@@ -138,7 +150,6 @@ def get_embeddings(texts):
 def extract_flavor_tags(data_series_name, data_series_long_desc):
     """Extracts flavor tags from descriptions (and names) using OpenAI."""
     tags = []
-    # Combine name and long_description for better flavor extraction context
     combined_descriptions = [
         f"{name}. {desc}" for name, desc in zip(data_series_name.fillna(''), data_series_long_desc.fillna(''))
     ]
@@ -160,7 +171,7 @@ def extract_flavor_tags(data_series_name, data_series_long_desc):
             tag_text = response.choices[0].message.content.strip()
             tags.append(tag_text)
         except Exception as e:
-            tags.append("") # Append empty string on error
+            tags.append("")
     return tags
 
 # --- 4. Main App Logic ---
@@ -216,14 +227,14 @@ if not df_products.empty:
         default_other_grind = []
         if drink_type == "Coffee":
             coffee_products = df_products[df_products['category'].str.contains('Coffee', case=False, na=False)]
-            available_grind_types = coffee_products['grind_type'].str.lower().unique()
+            available_grind_types = coffee_products['grind'].str.lower().unique() # Changed to 'grind'
             if 'ground' in available_grind_types:
                 default_other_grind.append("Ground")
             if 'whole bean' in available_grind_types:
                 default_other_grind.append("Whole Bean")
             
             if not default_other_grind and not uses_keurig:
-                default_other_grind = ["Ground"]
+                default_other_grind = ["Ground"] # Sensible default if nothing else is pre-selected
         
         selected_other_grind_types = st.multiselect(
             "Select other grind type(s):",
@@ -259,7 +270,6 @@ if not df_products.empty:
                         temperature=0.7
                     )
                     ai_tags_raw = response.choices[0].message.content.strip()
-                    # Define ai_suggested_tags_filtered before the if block
                     ai_suggested_tags_filtered = [
                         t.strip() for t in ai_tags_raw.split(',') if t.strip() in all_flavor_suggestions
                     ]
@@ -274,9 +284,9 @@ if not df_products.empty:
                         )
                         if agree_to_ai_tags == "No, I'll pick":
                             st.session_state.ai_suggested_tags = []
-                    else: # This else block handles cases where AI returns no valid tags
+                    else:
                         st.warning("We had trouble understanding your flavor style. Please try typing again or pick manually below.")
-                        st.session_state.ai_suggested_tags = [] # Ensure it's explicitly cleared
+                        st.session_state.ai_suggested_tags = []
                 except Exception as e:
                     st.warning(f"AI flavor suggestion failed: {e}. Please try typing again or pick manually below.")
                     st.session_state.ai_suggested_tags = []
@@ -327,39 +337,38 @@ if not df_products.empty:
                 if category_mask.any():
                     filtered_products = filtered_products[category_mask]
                 else:
-                    st.warning(f"No products found specifically for '{drink_type}'. Broadening search to all categories for remaining filters.")
-                    filtered_products = df_products.copy() # Revert if filter made it empty
+                    st.warning(f"No products found specifically for '{drink_type}'. Proceeding with all categories to apply other filters.")
+                    filtered_products = df_products.copy() # Revert to full dataset if this filter yields no results
 
-            # 2. Filter by Grind Type (using the new 'grind_type' column) - Strict
+            # 2. Filter by Grind Type (using the 'grind' column) - Simpler Logic
+            # This logic prioritizes matching the selected grind type.
+            # If nothing matches the selected grind type after category filtering, it will warn
+            # but *not* revert to a state where grind type isn't filtered.
             if brew_grind_options_user:
                 grind_type_mask = pd.Series([False] * len(filtered_products), index=filtered_products.index)
                 
                 for option in brew_grind_options_user:
-                    # Check grind_type column directly
                     grind_type_mask = grind_type_mask | \
-                                      (filtered_products['grind_type'].str.contains(option, case=False, na=False))
+                                      (filtered_products['grind'].str.contains(option, case=False, na=False))
                 
-                temp_filtered_products = filtered_products[grind_type_mask] # Apply filter to a temporary df
+                temp_filtered_products = filtered_products[grind_type_mask]
 
                 if not temp_filtered_products.empty:
-                    filtered_products = temp_filtered_products # Only update if results exist
+                    filtered_products = temp_filtered_products
                 else:
-                    st.warning(f"No products found matching your selected brew/grind type(s): {', '.join(brew_grind_options_user)}. Ignoring grind type filter to show other relevant products.")
-                    # If this filter yields no results, `filtered_products` remains as it was before this filter.
-                    # This prevents previous valid filters from being undone.
+                    st.warning(f"No products found matching your selected brew/grind type(s): {', '.join(brew_grind_options_user)}. Adjusting recommendations based on other preferences.")
+                    # Keep `filtered_products` as it was before this specific grind filter was applied
+                    # This means if no grind types match, the original `filtered_products` (post-category filter) is used for flavor/roast matching.
+                    pass # `filtered_products` is not updated, effectively skipping this filter if it makes the df empty
 
-            else: # If no grind types are selected, assume non-pod general products
+            else: # If no grind types are selected, show all non-pod products by default
                 st.info("No brew method selected. Automatically excluding 'Pods' and showing all 'Ground'/'Whole Bean' products.")
-                # Filter out pods if no specific grind type is selected
-                temp_filtered_products = filtered_products[
-                    ~filtered_products['grind_type'].str.contains("pod", case=False, na=False)
-                ]
+                non_pod_mask = ~filtered_products['grind'].str.contains("pod", case=False, na=False)
+                temp_filtered_products = filtered_products[non_pod_mask]
                 if not temp_filtered_products.empty:
                     filtered_products = temp_filtered_products
                 else:
                     st.warning("No non-pod products found based on other filters. Showing all products regardless of grind type.")
-                    # Revert to the state before trying to exclude pods if that makes it empty
-                    # (effectively, if no non-pods, then show everything)
 
 
             # 3. Filter by Roast Preference (only for Coffee) - Strict
@@ -370,7 +379,7 @@ if not df_products.empty:
                     filtered_products = temp_filtered_products
                 else:
                     st.warning(f"No coffee found with '{roast_preference}' roast level matching other criteria. Ignoring roast level filter.")
-                    # Keep `filtered_products` as is if this specific filter causes emptiness
+                    pass
 
 
             # Now, apply flavor matching or surprise logic
@@ -481,9 +490,8 @@ if not df_products.empty:
                 with col2:
                     st.subheader(row['name'])
                     st.markdown(f"**Category:** {row['category']}")
-                    # Use grind_type instead of brew_method for display
-                    if row['grind_type'].strip():
-                        st.markdown(f"**Grind Type:** {row['grind_type']}")
+                    if row['grind'].strip(): # Changed to 'grind'
+                        st.markdown(f"**Grind Type:** {row['grind']}")
                     if row['roast_level'].strip():
                         st.markdown(f"**Roast Level:** {row['roast_level']}")
                     
