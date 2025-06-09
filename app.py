@@ -268,8 +268,12 @@ if not df_products.empty:
             st.markdown('<p style="font-size:20px; font-weight:bold;">Your Personalized Butler Coffee Lab Picks:</p>', unsafe_allow_html=True)
 
             for _, product in recommendations.iterrows():
+                # Display image if available
+                if 'image_url' in product and pd.notna(product['image_url']) and product['image_url'].strip():
+                    st.image(product['image_url'].strip(), use_column_width=True)
                 st.subheader(product['name'])
                 st.write(product['short_description'])
+                st.write(f"**Flavors:** {product['flavor_tags']}")
                 st.write(f"**Price:** ${product['price']}")
                 st.markdown(f"[Buy Now]({product['bcl_website_link']})")
         else:
