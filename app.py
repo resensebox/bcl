@@ -176,20 +176,28 @@ if not df_products.empty:
                     recommendations = filtered_products.sample(min(5, len(filtered_products)), random_state=42)
                 else:
                     st.warning("No products found matching your basic type and brew preferences for 'Surprise Me'.")
-            elif flavor_input and len(flavor_input) >= 2:
+            elif flavor_input:
                 search_text = ", ".join(flavor_input)
                 products_for_similarity = filtered_products.copy()
 
                 if not products_for_similarity.empty:
-                    user_embedding = get_embeddings([search_text])[0]
-                    cosine_scores = util.cos_sim(user_embedding, [e for e in products_for_similarity['long_description_embedding']])[0]
-                    products_for_similarity['similarity_score'] = cosine_scores.cpu().numpy()
-                    recommendations = products_for_similarity.sort_values(by='similarity_score', ascending=False).head(10)
+                    try:
+                        user_embedding = get_embeddings([search_text])[0]
+                        product_embeddings = [e for e in products_for_similarity['long_description_embedding']]
+                        cosine_scores = util.cos_sim(user_embedding, product_embeddings)[0].cpu().numpy()
+                        products_for_similarity['similarity_score'] = cosine_scores
+                        recommendations = products_for_similarity.sort_values(by='similarity_score', ascending=False).head(10)
+                    except Exception as e:
+                        st.warning(f"Similarity comparison failed: {e}")
+                        recommendations = filtered_products.sample(min(3, len(filtered_products)))
+                else:
+                    st.warning("No products available for flavor matching. Showing general picks.")
+                    recommendations = filtered_products.sample(min(3, len(filtered_products)))
                 else:
                     st.warning("No products with detailed descriptions found for flavor matching. Showing some general recommendations.")
                     recommendations = filtered_products.sample(min(3, len(filtered_products))) if not filtered_products.empty else pd.DataFrame()
             else:
-                st.warning("Please select at least two flavor notes. We'll match the closest possible products even if not all match.")
+                st.warning("Please select at least one flavor note. We'll still match the closest products even if not all align.")
 
         if not recommendations.empty:
             st.markdown("---")
