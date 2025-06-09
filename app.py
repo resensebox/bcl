@@ -28,7 +28,7 @@ GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1VBnG4kfGOUN3iVH1n14q
 # If your secrets.toml has a nested structure like [openai] then api_key = "...",
 # you would keep st.secrets["openai"]["api_key"]. Let's assume the simpler flat structure for now.
 try:
-    openai_api_key = st.secrets["open_ai_key"] # Access as a direct key, not nested
+    openai_api_key = st.secrets["openai"]["api_key"] # Access as a direct key, not nested
     client = OpenAI(api_key=openai_api_key)
 except KeyError:
     st.error("Looks like your OpenAI API key isn't set up correctly in Streamlit Secrets. Please ensure 'open_ai_key' is present in your .streamlit/secrets.toml.")
