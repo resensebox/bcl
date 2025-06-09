@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 # --- 2. Configuration & Initialization ---
-GOOGLE_SHEET_URL = "1VBnG4kfGOUN3iVH1n14qOUnzivhiU_SsOclCAcWkFI8"
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1VBnG4kfGOUN3iVH1n14qOUnzivhiU_SsOclCAcWkFI8/edit?gid=2100213808#gid=2100213808"
 
 try:
     openai_api_key = st.secrets["openai"]["api_key"]
