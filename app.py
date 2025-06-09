@@ -17,6 +17,31 @@ st.set_page_config(
     menu_items=None
 )
 
+# --- Apply Custom CSS for White Background ---
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-color: white;
+    }
+    .stApp > header {
+        background-color: white;
+    }
+    .st-emotion-cache-z5fcl4 { /* This targets the main content block, adjust if needed for your specific Streamlit version */
+        background-color: white;
+    }
+    .st-emotion-cache-1c7y2kl { /* This targets the sidebar background */
+        background-color: #f0f2f6; /* A very light gray for sidebar to distinguish, or pure white: white */
+    }
+    .st-emotion-cache-1dp5vir { /* sidebar elements */
+        background-color: white;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
 # --- 2. Configuration & Initialization ---
 GOOGLE_SHEET_ID = "1VBnG4kfGOUN3iVH1n14qOUnzivhiU_SsOclCAcWkFI8"
 
@@ -182,24 +207,21 @@ if not df_products.empty:
         st.markdown("---")
         st.subheader("Step 2: How do you brew?")
         
-        brew_grind_options_user = [] # This will hold the user's selected grind/brew types
+        brew_grind_options_user = [] 
         
         uses_keurig = st.checkbox("Do you use a Keurig (for pods)?", key="uses_keurig_checkbox")
         if uses_keurig:
             brew_grind_options_user.append("Pods") 
         
-        # Default options for multiselect based on available data for the selected drink type
         default_other_grind = []
         if drink_type == "Coffee":
             coffee_products = df_products[df_products['category'].str.contains('Coffee', case=False, na=False)]
-            # Check for existing grind types in coffee products
             available_grind_types = coffee_products['grind_type'].str.lower().unique()
             if 'ground' in available_grind_types:
                 default_other_grind.append("Ground")
             if 'whole bean' in available_grind_types:
                 default_other_grind.append("Whole Bean")
             
-            # If no explicit defaults and no keurig, default to ground
             if not default_other_grind and not uses_keurig:
                 default_other_grind = ["Ground"]
         
@@ -210,7 +232,7 @@ if not df_products.empty:
             key="other_grind_type_multiselect"
         )
         brew_grind_options_user.extend(selected_other_grind_types)
-        brew_grind_options_user = list(set(brew_grind_options_user)) # Ensure unique elements
+        brew_grind_options_user = list(set(brew_grind_options_user))
 
 
         st.markdown("---")
@@ -237,12 +259,13 @@ if not df_products.empty:
                         temperature=0.7
                     )
                     ai_tags_raw = response.choices[0].message.content.strip()
+                    # Define ai_suggested_tags_filtered before the if block
                     ai_suggested_tags_filtered = [
                         t.strip() for t in ai_tags_raw.split(',') if t.strip() in all_flavor_suggestions
                     ]
 
                     if ai_suggested_tags_filtered:
-                        st.session_state.ai_suggested_tags = ai_tags_filtered
+                        st.session_state.ai_suggested_tags = ai_suggested_tags_filtered
                         st.markdown(f"**We think you might like these flavors:** {', '.join(ai_suggested_tags_filtered)}")
                         agree_to_ai_tags = st.radio(
                             "Are these on point?",
@@ -251,9 +274,9 @@ if not df_products.empty:
                         )
                         if agree_to_ai_tags == "No, I'll pick":
                             st.session_state.ai_suggested_tags = []
-                    else:
+                    else: # This else block handles cases where AI returns no valid tags
                         st.warning("We had trouble understanding your flavor style. Please try typing again or pick manually below.")
-                        st.session_session.ai_suggested_tags = []
+                        st.session_state.ai_suggested_tags = [] # Ensure it's explicitly cleared
                 except Exception as e:
                     st.warning(f"AI flavor suggestion failed: {e}. Please try typing again or pick manually below.")
                     st.session_state.ai_suggested_tags = []
@@ -300,54 +323,54 @@ if not df_products.empty:
 
             # 1. Filter by Drink Type (Category) - Strict
             if drink_type and drink_type != "Other":
-                initial_filter_len = len(filtered_products)
                 category_mask = filtered_products['category'].str.contains(drink_type, case=False, na=False)
-                filtered_products = filtered_products[category_mask]
-                
-                if filtered_products.empty:
-                    st.warning(f"No products found specifically for '{drink_type}' matching previous filters. Broadening search to all categories for remaining filters.")
+                if category_mask.any():
+                    filtered_products = filtered_products[category_mask]
+                else:
+                    st.warning(f"No products found specifically for '{drink_type}'. Broadening search to all categories for remaining filters.")
                     filtered_products = df_products.copy() # Revert if filter made it empty
 
             # 2. Filter by Grind Type (using the new 'grind_type' column) - Strict
             if brew_grind_options_user:
-                initial_filter_len = len(filtered_products)
                 grind_type_mask = pd.Series([False] * len(filtered_products), index=filtered_products.index)
                 
                 for option in brew_grind_options_user:
-                    if option == "Pods":
-                        # Check grind_type column AND category for 'Pods' for robustness
-                        grind_type_mask = grind_type_mask | \
-                                          (filtered_products['grind_type'].str.contains("pod", case=False, na=False)) | \
-                                          (filtered_products['category'].str.contains("pod", case=False, na=False))
-                    else:
-                        grind_type_mask = grind_type_mask | \
-                                          (filtered_products['grind_type'].str.contains(option, case=False, na=False))
+                    # Check grind_type column directly
+                    grind_type_mask = grind_type_mask | \
+                                      (filtered_products['grind_type'].str.contains(option, case=False, na=False))
                 
-                filtered_products = filtered_products[grind_type_mask]
+                temp_filtered_products = filtered_products[grind_type_mask] # Apply filter to a temporary df
 
-                if filtered_products.empty:
+                if not temp_filtered_products.empty:
+                    filtered_products = temp_filtered_products # Only update if results exist
+                else:
                     st.warning(f"No products found matching your selected brew/grind type(s): {', '.join(brew_grind_options_user)}. Ignoring grind type filter to show other relevant products.")
-                    filtered_products = df_products.copy() # Revert to initial products if this filter makes it empty
+                    # If this filter yields no results, `filtered_products` remains as it was before this filter.
+                    # This prevents previous valid filters from being undone.
 
             else: # If no grind types are selected, assume non-pod general products
                 st.info("No brew method selected. Automatically excluding 'Pods' and showing all 'Ground'/'Whole Bean' products.")
-                filtered_products = filtered_products[
-                    ~filtered_products['grind_type'].str.contains("pod", case=False, na=False) &
-                    ~filtered_products['category'].str.contains("pod", case=False, na=False)
+                # Filter out pods if no specific grind type is selected
+                temp_filtered_products = filtered_products[
+                    ~filtered_products['grind_type'].str.contains("pod", case=False, na=False)
                 ]
-                if filtered_products.empty:
-                    st.warning("No non-pod products found. Showing all products.")
-                    filtered_products = df_products.copy()
+                if not temp_filtered_products.empty:
+                    filtered_products = temp_filtered_products
+                else:
+                    st.warning("No non-pod products found based on other filters. Showing all products regardless of grind type.")
+                    # Revert to the state before trying to exclude pods if that makes it empty
+                    # (effectively, if no non-pods, then show everything)
 
 
             # 3. Filter by Roast Preference (only for Coffee) - Strict
             if drink_type == "Coffee" and roast_preference != "No preference":
-                initial_filter_len = len(filtered_products)
                 roast_mask = filtered_products['roast_level'].str.contains(roast_preference, case=False, na=False)
-                filtered_products = filtered_products[roast_mask]
-                if filtered_products.empty:
+                temp_filtered_products = filtered_products[roast_mask]
+                if not temp_filtered_products.empty:
+                    filtered_products = temp_filtered_products
+                else:
                     st.warning(f"No coffee found with '{roast_preference}' roast level matching other criteria. Ignoring roast level filter.")
-                    filtered_products = df_products.copy() # Revert to initial products if this filter makes it empty
+                    # Keep `filtered_products` as is if this specific filter causes emptiness
 
 
             # Now, apply flavor matching or surprise logic
