@@ -21,12 +21,12 @@ st.set_page_config(
 # --- 2. Configuration & Initialization ---
 # Replace with your actual Google Sheet URL.
 # Ensure this sheet is shared with the service account email from your secrets.
-GOOGLE_SHEET_URL = "YOUR_GOOGLE_SHEET_URL_HERE"
+GOOGLE_SHEET_URL = "1VBnG4kfGOUN3iVH1n14qOUnzivhiU_SsOclCAcWkFI8/edit?gid=2100213808"
 
 # Initialize OpenAI Client using Streamlit secrets.
 # The key 'open_ai_key' must match the one in your .streamlit/secrets.toml.
 try:
-    openai_api_key = st.secrets["open_ai_key"]
+    openai_api_key = st.secrets["openai"]["api_key"]
     client = OpenAI(api_key=openai_api_key)
 except KeyError:
     st.error("Looks like your OpenAI API key isn't set up correctly in Streamlit Secrets. Please ensure 'open_ai_key' is present.")
