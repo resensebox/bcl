@@ -178,20 +178,18 @@ if not df_products.empty:
                     st.warning("No products found matching your basic type and brew preferences for 'Surprise Me'.")
             elif flavor_input and len(flavor_input) >= 2:
                 search_text = ", ".join(flavor_input)
-                products_for_similarity = filtered_products[
-                    filtered_products['long_description_embedding'].apply(lambda x: x is not None and hasattr(x, 'numel') and x.numel() > 0)
-                ].copy()
+                products_for_similarity = filtered_products.copy()
 
                 if not products_for_similarity.empty:
                     user_embedding = get_embeddings([search_text])[0]
                     cosine_scores = util.cos_sim(user_embedding, [e for e in products_for_similarity['long_description_embedding']])[0]
                     products_for_similarity['similarity_score'] = cosine_scores.cpu().numpy()
-                    recommendations = products_for_similarity.sort_values(by='similarity_score', ascending=False).head(5)
+                    recommendations = products_for_similarity.sort_values(by='similarity_score', ascending=False).head(10)
                 else:
                     st.warning("No products with detailed descriptions found for flavor matching. Showing some general recommendations.")
                     recommendations = filtered_products.sample(min(3, len(filtered_products))) if not filtered_products.empty else pd.DataFrame()
             else:
-                st.warning("Please select at least two flavor notes for better matching results.")
+                st.warning("Please select at least two flavor notes. We'll match the closest possible products even if not all match.")
 
         if not recommendations.empty:
             st.markdown("---")
