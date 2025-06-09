@@ -218,7 +218,21 @@ if not df_products.empty:
                         new_tags = response.choices[0].message.content.strip().split(',')
                         new_tags = [tag.strip() for tag in new_tags if tag.strip() in flavor_suggestions and tag.strip() not in flavor_input]
                         if new_tags:
-                            st.info(f"It sounds like you enjoy flavors like {', '.join(flavor_input)}. You might also like: {', '.join(new_tags)}")
+                            user_accepts = False
+                            st.markdown(f"It sounds like you enjoy flavors like {', '.join(flavor_input)}. You might also like: {', '.join(new_tags)}")
+                            if st.button("Yes, try those flavors too!"):
+                                flavor_input += new_tags
+                                user_accepts = True
+                            elif st.button("No, show me other options"):
+                                user_accepts = False
+
+                            if user_accepts:
+                                products_for_similarity['flavor_overlap'] = products_for_similarity['flavor_tags'].apply(
+                                    lambda tags: len(set(flavor_input) & set([t.strip() for t in tags.split(',')] if isinstance(tags, str) else [])))
+                                matched = products_for_similarity[products_for_similarity['flavor_overlap'] > 0].copy()
+                                recommendations = matched.sort_values(by='flavor_overlap', ascending=False).head(5)
+                            else:
+                                st.warning("No problem! Try selecting different flavor notes or hit 'Surprise Me' to get a fresh pick.")
                             flavor_input += new_tags
                             products_for_similarity['flavor_overlap'] = products_for_similarity['flavor_tags'].apply(lambda tags: len(set(flavor_input) & set([t.strip() for t in tags.split(',')] if isinstance(tags, str) else [])))
                             matched = products_for_similarity[products_for_similarity['flavor_overlap'] > 0].copy()
