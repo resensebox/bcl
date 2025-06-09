@@ -110,10 +110,6 @@ df_products = load_data_from_google_sheets()
 if 'image_url' not in df_products.columns:
     df_products['image_url'] = ''
 
-    # Ensure image_url column exists
-    if 'image_url' not in df_products.columns:
-        df_products['image_url'] = ''
-
 # Add 'specific_flavors' column from extracted flavor_tags
 if 'specific_flavors' not in df_products.columns:
         df_products['specific_flavors'] = extract_flavor_tags(df_products['long_description'].fillna(''))
@@ -277,7 +273,8 @@ if not df_products.empty:
 
             for _, product in recommendations.iterrows():
                 # Display image if available
-                if 'image_url' in product and isinstance(product['image_url'], str) and product['image_url'].strip():
+                st.text(f"🖼 Image URL: {product['image_url']}")  # Debug: Show image URL
+                if isinstance(product['image_url'], str) and product['image_url'].strip():
                     st.image(product['image_url'].strip(), use_container_width=True)
                 else:
                     st.image('https://via.placeholder.com/600x400?text=No+Image+Available', use_container_width=True)
