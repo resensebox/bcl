@@ -191,7 +191,15 @@ if not df_products.empty:
                 filtered_products = temp
 
             if brew_method:
-                temp = filtered_products[filtered_products['brew_method'].fillna('').apply(lambda x: any(b.lower() in (x + ' ' + filtered_products.get('name', '')).lower() for b in brew_method))]
+                temp = filtered_products[
+    filtered_products.apply(
+        lambda row: any(
+            b.lower() in (str(row['brew_method']) + ' ' + str(row['name'])).lower()
+            for b in brew_method
+        ),
+        axis=1
+    )
+]
                 if not temp.empty:
                     filtered_products = temp
 
