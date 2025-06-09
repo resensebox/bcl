@@ -173,19 +173,7 @@ if not df_products.empty:
     if submitted:
         # Use AI to classify each product into a broader flavor category
         if 'flavor_category' not in df_products.columns:
-            try:
-                df_products['flavor_category'] = df_products['flavor_tags'].apply(lambda tags: client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "Group these flavor notes into 1 general category like 'Sweet & Cozy', 'Nutty & Bold', 'Fruity & Bright', or 'Classic Roast'."},
-                        {"role": "user", "content": tags or ""}
-                    ],
-                    max_tokens=10,
-                    temperature=0.5
-                ).choices[0].message.content.strip())
-            except Exception as e:
-                st.warning(f"Failed to assign flavor categories: {e}")
-                df_products['flavor_category'] = 'General Favorites'
+            df_products['flavor_category'] = 'General Favorites'
 
         with st.spinner("Brewing up your perfect recommendations..."):
             filtered_products = df_products.copy()
