@@ -18,13 +18,20 @@ st.set_page_config(
 )
 
 # --- 2. Configuration & Initialization ---
-GOOGLE_SHEET_URL = "1VBnG4kfGOUN3iVH1n14qOUnzivhiU_SsOclCAcWkFI8"
+# Use the full Google Sheet URL here, or reconstruct it from the ID.
+# Example: "https://docs.google.com/spreadsheets/d/1VBnG4kfGOUN3iVH1n14qOUnzivhiU_SsOclCAcWkFI8/edit?usp=sharing"
+# The ID you provided is '1VBnG4kfGOUN3iVH1n14qOUnzivhiU_SsOclCAcWkFI8'
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1VBnG4kfGOUN3iVH1n14qOUnzivhiU_SsOclCAcWkFI8/edit?usp=sharing" #
 
+# Initialize OpenAI Client using Streamlit secrets.
+# IMPORTANT: Changed this back to st.secrets["open_ai_key"] to match your previous secrets.toml format.
+# If your secrets.toml has a nested structure like [openai] then api_key = "...",
+# you would keep st.secrets["openai"]["api_key"]. Let's assume the simpler flat structure for now.
 try:
-    openai_api_key = st.secrets["openai"]["api_key"]
+    openai_api_key = st.secrets["open_ai_key"] # Access as a direct key, not nested
     client = OpenAI(api_key=openai_api_key)
 except KeyError:
-    st.error("Looks like your OpenAI API key isn't set up correctly in Streamlit Secrets. Please ensure 'open_ai_key' is present.")
+    st.error("Looks like your OpenAI API key isn't set up correctly in Streamlit Secrets. Please ensure 'open_ai_key' is present in your .streamlit/secrets.toml.")
     st.stop()
 
 @st.cache_resource
@@ -45,8 +52,9 @@ def load_data_from_google_sheets():
             st.error("Google service account secrets not found. Please configure 'google_service_account' in your Streamlit secrets.")
             st.stop()
         
+        # Open by URL directly. Make sure the URL includes "/edit?usp=sharing" or similar.
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
-        worksheet = sh.worksheet("Sheet1")
+        worksheet = sh.worksheet("Sheet1") # Adjust sheet name if different
         
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
@@ -66,8 +74,9 @@ def load_data_from_google_sheets():
 
         return df
     except Exception as e:
+        # Provide a more specific error message if the sheet cannot be opened or data processed.
         st.error(f"Uh oh! Couldn't load data from Google Sheets. Error: {e}")
-        st.info("Double-check your Google Sheet URL, and ensure the service account email has Viewer access to the sheet.")
+        st.info("Double-check your Google Sheet URL (including /edit?usp=sharing), and ensure the service account email has Viewer access to the sheet.")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600*24)
@@ -178,7 +187,7 @@ st.markdown("""
 <style>
     /* General body and text color */
     .stApp {
-        background-color: #FFFFFF; /* Light pastel background */
+        background-color: #FFFFFF; /* Pure white background */
         color: #333333; /* Dark gray for general text */
     }
     
@@ -291,8 +300,6 @@ st.markdown("""
     }
 
     /* --- Messages (Error, Warning, Info) --- */
-    /* Streamlit's built-in messages usually handle their own contrast,
-       but we can ensure their text color is appropriately dark within them. */
     div[data-testid="stAlert"] {
         color: #333333 !important; /* Ensure alert text is dark */
     }
