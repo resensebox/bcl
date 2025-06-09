@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import gspread
 import re
-from bs4 import BeautifulSoup
 import requests
 import json
 from openai import OpenAI
@@ -56,23 +55,23 @@ def load_data_from_google_sheets():
         # Sanitize column names
         df.columns = [re.sub(r'[^a-z0-9_]', '', col.lower().replace(' ', '_')) for col in df.columns]
 
-        required_cols = ['name', 'category', 'short_description', 'long_description', 'price', 'bcl_website_link']
+        # Added 'grind_type' to required columns
+        required_cols = ['name', 'category', 'short_description', 'long_description', 'price', 'bcl_website_link', 'grind_type']
         for col in required_cols:
             if col not in df.columns:
-                st.error(f"Missing required column in Google Sheet: '{col}'. Please check your sheet headers (e.g., 'Category' becomes 'category').")
+                st.error(f"Missing required column in Google Sheet: '{col}'. Please check your sheet headers (e.g., 'Category' becomes 'category', 'Grind Type' becomes 'grind_type').")
                 return pd.DataFrame()
 
         # Ensure essential columns exist, add if missing
         if 'brew_method' not in df.columns:
-            df['brew_method'] = ''
+            df['brew_method'] = '' # Keep for compatibility, though grind_type is preferred
         if 'roast_level' not in df.columns:
             df['roast_level'] = ''
         if 'image_url' not in df.columns:
             df['image_url'] = ''
 
         # Convert relevant columns to string type to prevent errors during processing
-        # Handle potential non-string values gracefully before converting
-        for col in ['name', 'category', 'short_description', 'long_description', 'brew_method', 'roast_level', 'bcl_website_link', 'image_url', 'price']:
+        for col in ['name', 'category', 'short_description', 'long_description', 'brew_method', 'roast_level', 'bcl_website_link', 'image_url', 'grind_type', 'price']:
             if col in df.columns:
                 df[col] = df[col].apply(lambda x: str(x) if pd.notna(x) else '')
             else:
@@ -93,15 +92,11 @@ def get_embeddings(texts):
     """Generates embeddings for a list of texts."""
     valid_texts = [str(t) for t in texts if pd.notna(t) and t.strip() != '']
     if not valid_texts:
-        return []
-    
-    # Pad or handle empty list for embedder.encode
-    if not valid_texts:
-        return [torch.zeros(embedder.get_sentence_embedding_dimension())] * len(texts) # Return zero vectors if no valid texts
+        # Return zero vectors with correct dimension for the number of input texts
+        return [torch.zeros(embedder.get_sentence_embedding_dimension()) for _ in range(len(texts))]
     
     embeddings = embedder.encode(valid_texts, convert_to_tensor=True)
     
-    # Map embeddings back to original list length, putting zero vectors for empty/invalid texts
     result_embeddings = []
     text_idx = 0
     for t in texts:
@@ -140,7 +135,6 @@ def extract_flavor_tags(data_series_name, data_series_long_desc):
             tag_text = response.choices[0].message.content.strip()
             tags.append(tag_text)
         except Exception as e:
-            # st.warning(f"Error extracting tags for item {i}: {e}") # Debugging: uncomment for development
             tags.append("") # Append empty string on error
     return tags
 
@@ -152,22 +146,19 @@ df_products = load_data_from_google_sheets()
 
 if not df_products.empty:
     # Pre-process flavor tags only once, considering both name and long_description
-    # Check if specific_flavors column is missing or contains any empty strings
     if 'specific_flavors' not in df_products.columns or \
        df_products['specific_flavors'].isnull().any() or \
-       (df_products['specific_flavors'] == '').any(): # Check for actual empty strings
+       (df_products['specific_flavors'] == '').any():
         with st.spinner("Analyzing product flavors with AI (this may take a moment on first run or if data updated)..."):
             df_products['specific_flavors'] = extract_flavor_tags(
                 df_products['name'], df_products['long_description']
             )
-            # Filter out empty or whitespace-only tags
             df_products['specific_flavors'] = df_products['specific_flavors'].apply(
                 lambda x: ', '.join([tag.strip() for tag in x.split(',') if tag.strip()]) if isinstance(x, str) else ''
             )
 
-    df_products['flavor_tags'] = df_products['specific_flavors'] # Use this column for consistency
+    df_products['flavor_tags'] = df_products['specific_flavors']
 
-    # Create a comprehensive list of all unique flavor suggestions
     all_flavor_suggestions = sorted(list(set(
         tag.strip()
         for tag_list in df_products['flavor_tags'].str.split(',')
@@ -176,8 +167,6 @@ if not df_products.empty:
         if tag.strip()
     )))
 
-    # Generate embeddings for flavor tags (only for non-empty tags)
-    # Ensure every row gets an embedding, even if it's a zero vector
     all_flavor_embeddings = get_embeddings(df_products['flavor_tags'].tolist())
     df_products['flavor_tag_embedding'] = all_flavor_embeddings
 
@@ -193,43 +182,40 @@ if not df_products.empty:
         st.markdown("---")
         st.subheader("Step 2: How do you brew?")
         
-        brew_method_options_user = [] # This will hold the user's selected brew methods
+        brew_grind_options_user = [] # This will hold the user's selected grind/brew types
         
         uses_keurig = st.checkbox("Do you use a Keurig (for pods)?", key="uses_keurig_checkbox")
         if uses_keurig:
-            brew_method_options_user.append("Pods") # Automatically add Pods if Keurig is checked
+            brew_grind_options_user.append("Pods") 
         
-        # Determine default for ground/whole bean based on available data for Coffee
-        default_other_brew = []
+        # Default options for multiselect based on available data for the selected drink type
+        default_other_grind = []
         if drink_type == "Coffee":
-            # Check if any coffee products are explicitly 'Ground' or 'Whole Bean'
             coffee_products = df_products[df_products['category'].str.contains('Coffee', case=False, na=False)]
-            if 'ground' in coffee_products['brew_method'].str.lower().unique() or \
-               any("ground" in name.lower() for name in coffee_products['name'].unique()):
-                default_other_brew.append("Ground")
-            if 'whole bean' in coffee_products['brew_method'].str.lower().unique() or \
-               any("whole bean" in name.lower() for name in coffee_products['name'].unique()):
-                default_other_brew.append("Whole Bean")
-            # If no explicit default, just set empty to avoid pre-selecting
-            if not default_other_brew and not uses_keurig:
-                default_other_brew = []
-            elif "Ground" not in default_other_brew and "Whole Bean" not in default_other_brew and not uses_keurig:
-                 default_other_brew = ["Ground"] # Default to Ground if nothing else, and not pods
-
-        selected_other_brew_methods = st.multiselect(
-            "Select other brew method(s):",
+            # Check for existing grind types in coffee products
+            available_grind_types = coffee_products['grind_type'].str.lower().unique()
+            if 'ground' in available_grind_types:
+                default_other_grind.append("Ground")
+            if 'whole bean' in available_grind_types:
+                default_other_grind.append("Whole Bean")
+            
+            # If no explicit defaults and no keurig, default to ground
+            if not default_other_grind and not uses_keurig:
+                default_other_grind = ["Ground"]
+        
+        selected_other_grind_types = st.multiselect(
+            "Select other grind type(s):",
             ["Ground", "Whole Bean"],
-            default=default_other_brew,
-            key="other_brew_method_multiselect"
+            default=default_other_grind,
+            key="other_grind_type_multiselect"
         )
-        brew_method_options_user.extend(selected_other_brew_methods)
-        brew_method_options_user = list(set(brew_method_options_user)) # Ensure unique elements
+        brew_grind_options_user.extend(selected_other_grind_types)
+        brew_grind_options_user = list(set(brew_grind_options_user)) # Ensure unique elements
 
 
         st.markdown("---")
         st.subheader("Step 3: Tell us about your ideal flavor.")
 
-        # Initialize session state for AI suggested tags
         if 'ai_suggested_tags' not in st.session_state:
             st.session_state.ai_suggested_tags = []
 
@@ -251,13 +237,12 @@ if not df_products.empty:
                         temperature=0.7
                     )
                     ai_tags_raw = response.choices[0].message.content.strip()
-                    # Filter to ensure only valid tags from our list are included
                     ai_suggested_tags_filtered = [
                         t.strip() for t in ai_tags_raw.split(',') if t.strip() in all_flavor_suggestions
                     ]
 
                     if ai_suggested_tags_filtered:
-                        st.session_state.ai_suggested_tags = ai_suggested_tags_filtered
+                        st.session_state.ai_suggested_tags = ai_tags_filtered
                         st.markdown(f"**We think you might like these flavors:** {', '.join(ai_suggested_tags_filtered)}")
                         agree_to_ai_tags = st.radio(
                             "Are these on point?",
@@ -265,15 +250,14 @@ if not df_products.empty:
                             key="ai_tags_agreement"
                         )
                         if agree_to_ai_tags == "No, I'll pick":
-                            st.session_state.ai_suggested_tags = [] # Clear AI tags if user wants to pick
+                            st.session_state.ai_suggested_tags = []
                     else:
                         st.warning("We had trouble understanding your flavor style. Please try typing again or pick manually below.")
-                        st.session_state.ai_suggested_tags = [] # Clear AI tags if AI fails
+                        st.session_session.ai_suggested_tags = []
                 except Exception as e:
                     st.warning(f"AI flavor suggestion failed: {e}. Please try typing again or pick manually below.")
                     st.session_state.ai_suggested_tags = []
 
-        # Flavor multi-select (default to AI suggested or empty if AI failed/rejected)
         flavor_input = st.multiselect(
             "Or, select specific flavor notes:",
             options=all_flavor_suggestions,
@@ -281,7 +265,6 @@ if not df_products.empty:
             key="manual_flavor_select"
         )
 
-        # Option for users who don't know
         if not flavor_input and not description_input.strip():
             if st.checkbox("I'm not sure about flavors, show me popular types!", key="not_sure_flavors"):
                 st.info("Okay, we'll suggest some popular general categories for you!")
@@ -289,12 +272,12 @@ if not df_products.empty:
             else:
                 st.session_state.explore_categories = False
         else:
-            st.session_state.explore_categories = False # Reset if they start inputting
+            st.session_state.explore_categories = False
 
         st.markdown("---")
         st.subheader("Step 4: Roast Preference (for Coffee)")
         roast_preference = "No preference"
-        if drink_type == "Coffee": # Only show roast preference for coffee
+        if drink_type == "Coffee":
             roast_preference = st.radio(
                 "Roast/Intensity:",
                 ["Light", "Medium", "Dark", "No preference"],
@@ -313,85 +296,58 @@ if not df_products.empty:
     # --- Main Content Area for Results ---
     if submitted:
         with st.spinner("Finding your perfect matches..."):
-            # Start with all products
             filtered_products = df_products.copy()
-            initial_product_count = len(filtered_products)
 
-            # Apply filters sequentially, checking for empty results at each step
-            # This helps in giving more specific warnings.
-
-            # 1. Filter by Drink Type (Category)
+            # 1. Filter by Drink Type (Category) - Strict
             if drink_type and drink_type != "Other":
+                initial_filter_len = len(filtered_products)
                 category_mask = filtered_products['category'].str.contains(drink_type, case=False, na=False)
-                if category_mask.any():
-                    filtered_products = filtered_products[category_mask]
-                else:
+                filtered_products = filtered_products[category_mask]
+                
+                if filtered_products.empty:
                     st.warning(f"No products found specifically for '{drink_type}' matching previous filters. Broadening search to all categories for remaining filters.")
-                    filtered_products = df_products.copy() # Revert to full set if this specific filter causes emptiness
+                    filtered_products = df_products.copy() # Revert if filter made it empty
 
-            # 2. Filter by Brew Method
-            # Create a combined string for brew method keywords in both columns
-            filtered_products['combined_brew_info'] = filtered_products['brew_method'].str.lower() + " " + filtered_products['name'].str.lower()
-
-            brew_method_mask = pd.Series([True] * len(filtered_products), index=filtered_products.index) # Start with all True
-            
-            # If user selected "Pods", include products identified as pods
-            if "Pods" in brew_method_options_user:
-                # Products are pods if 'pod' or 'k-cup' or 'single serve' appear in combined brew info
-                pod_keywords_regex = r'pod|k-cup|k cup|single serve'
-                brew_method_mask = brew_method_mask & \
-                                   (filtered_products['combined_brew_info'].str.contains(pod_keywords_regex, regex=True, na=False))
+            # 2. Filter by Grind Type (using the new 'grind_type' column) - Strict
+            if brew_grind_options_user:
+                initial_filter_len = len(filtered_products)
+                grind_type_mask = pd.Series([False] * len(filtered_products), index=filtered_products.index)
                 
-                # If other brew methods (Ground, Whole Bean) are also selected, combine them
-                other_methods = [m.lower() for m in brew_method_options_user if m != "Pods"]
-                if other_methods:
-                    other_methods_regex = '|'.join(re.escape(m) for m in other_methods) # Escape for regex
-                    brew_method_mask = brew_method_mask | \
-                                       (filtered_products['combined_brew_info'].str.contains(other_methods_regex, regex=True, na=False))
-
-            # If user did NOT select "Pods", explicitly exclude them
-            elif "Pods" not in brew_method_options_user and brew_method_options_user: # Other methods selected but not Pods
-                pod_keywords_regex = r'pod|k-cup|k cup|single serve'
-                brew_method_mask = brew_method_mask & \
-                                   (~filtered_products['combined_brew_info'].str.contains(pod_keywords_regex, regex=True, na=False))
+                for option in brew_grind_options_user:
+                    if option == "Pods":
+                        # Check grind_type column AND category for 'Pods' for robustness
+                        grind_type_mask = grind_type_mask | \
+                                          (filtered_products['grind_type'].str.contains("pod", case=False, na=False)) | \
+                                          (filtered_products['category'].str.contains("pod", case=False, na=False))
+                    else:
+                        grind_type_mask = grind_type_mask | \
+                                          (filtered_products['grind_type'].str.contains(option, case=False, na=False))
                 
-                # Now apply the other selected brew methods (Ground, Whole Bean)
-                allowed_methods_lower = [m.lower() for m in brew_method_options_user]
-                if allowed_methods_lower:
-                    allowed_methods_regex = '|'.join(re.escape(m) for m in allowed_methods_lower)
-                    brew_method_mask = brew_method_mask & \
-                                       (filtered_products['combined_brew_info'].str.contains(allowed_methods_regex, regex=True, na=False))
-                else: # This case should ideally not happen if brew_method_options_user is not empty and no "Pods"
-                    pass # Keep the mask as is (excluding pods)
+                filtered_products = filtered_products[grind_type_mask]
 
-            elif not brew_method_options_user: # No brew methods selected at all, default to non-pods
-                pod_keywords_regex = r'pod|k-cup|k cup|single serve'
-                brew_method_mask = brew_method_mask & \
-                                   (~filtered_products['combined_brew_info'].str.contains(pod_keywords_regex, regex=True, na=False))
+                if filtered_products.empty:
+                    st.warning(f"No products found matching your selected brew/grind type(s): {', '.join(brew_grind_options_user)}. Ignoring grind type filter to show other relevant products.")
+                    filtered_products = df_products.copy() # Revert to initial products if this filter makes it empty
+
+            else: # If no grind types are selected, assume non-pod general products
                 st.info("No brew method selected. Automatically excluding 'Pods' and showing all 'Ground'/'Whole Bean' products.")
+                filtered_products = filtered_products[
+                    ~filtered_products['grind_type'].str.contains("pod", case=False, na=False) &
+                    ~filtered_products['category'].str.contains("pod", case=False, na=False)
+                ]
+                if filtered_products.empty:
+                    st.warning("No non-pod products found. Showing all products.")
+                    filtered_products = df_products.copy()
 
 
-            # Apply the brew method mask
-            if brew_method_mask.any():
-                filtered_products = filtered_products[brew_method_mask]
-            else:
-                st.warning(f"No products found matching your selected brew method(s): {brew_method_options_user}. Ignoring brew method filter to show other relevant products.")
-                # Revert to the state before this filter was applied if it results in empty
-                # This requires careful state management. For now, let's keep it less strict
-                # and just proceed with what we have, but warn.
-
-            # Drop the temporary column
-            filtered_products = filtered_products.drop(columns=['combined_brew_info'], errors='ignore')
-
-
-            # 3. Filter by Roast Preference (only for Coffee)
+            # 3. Filter by Roast Preference (only for Coffee) - Strict
             if drink_type == "Coffee" and roast_preference != "No preference":
+                initial_filter_len = len(filtered_products)
                 roast_mask = filtered_products['roast_level'].str.contains(roast_preference, case=False, na=False)
-                if roast_mask.any():
-                    filtered_products = filtered_products[roast_mask]
-                else:
-                    st.warning(f"No coffee found with '{roast_preference}' roast level matching other criteria. Ignoring roast level filter for coffee.")
-                    pass # Keep `filtered_products` as is if this specific filter causes emptiness
+                filtered_products = filtered_products[roast_mask]
+                if filtered_products.empty:
+                    st.warning(f"No coffee found with '{roast_preference}' roast level matching other criteria. Ignoring roast level filter.")
+                    filtered_products = df_products.copy() # Revert to initial products if this filter makes it empty
 
 
             # Now, apply flavor matching or surprise logic
@@ -402,17 +358,15 @@ if not df_products.empty:
                     recommendations = filtered_products.sample(min(5, len(filtered_products)), random_state=42)
                 else:
                     st.warning("No products found matching your basic type and brew preferences for 'Surprise Me'. Showing top general favorites from all products.")
-                    recommendations = df_products.sample(min(5, len(df_products)), random_state=42) # Fallback to general products
+                    recommendations = df_products.sample(min(5, len(df_products)), random_state=42)
 
             elif flavor_input:
                 products_for_similarity = filtered_products.copy()
 
-                # Calculate flavor overlap score (direct matches)
                 products_for_similarity['flavor_overlap_score'] = products_for_similarity['flavor_tags'].apply(
                     lambda tags: len(set(flavor_input) & set([t.strip() for t in tags.split(',')] if isinstance(tags, str) else []))
                 )
 
-                # Get initial recommendations based on direct overlap
                 direct_matches = products_for_similarity[products_for_similarity['flavor_overlap_score'] > 0].sort_values(
                     by='flavor_overlap_score', ascending=False
                 )
@@ -424,8 +378,6 @@ if not df_products.empty:
                     try:
                         user_input_embedding = embedder.encode(", ".join(flavor_input), convert_to_tensor=True)
                         
-                        # Filter out products with empty or invalid embeddings for semantic similarity
-                        # This part needs to be very robust to avoid the "No products with valid flavor embeddings" error
                         valid_embeddings_df = products_for_similarity[
                             products_for_similarity['flavor_tag_embedding'].apply(lambda x: isinstance(x, torch.Tensor) and x.numel() > 0 and not torch.equal(x, torch.zeros_like(x)))
                         ].copy()
@@ -434,7 +386,6 @@ if not df_products.empty:
                             product_embeddings_list = [emb.cpu() for emb in valid_embeddings_df['flavor_tag_embedding'].tolist()]
                             product_embeddings_tensor = util.cat_embeddings_to_tensor(product_embeddings_list)
                             
-                            # Ensure user_input_embedding is on CPU for comparison
                             cosine_scores = util.cos_sim(user_input_embedding.cpu(), product_embeddings_tensor)[0]
                             valid_embeddings_df['similarity_score'] = cosine_scores.cpu().numpy()
 
@@ -444,7 +395,7 @@ if not df_products.empty:
                                 st.success("Found some great matches with similar flavor profiles!")
                             else:
                                 st.warning("Even with AI, we couldn't find close flavor matches after applying all filters. Showing some popular options instead.")
-                                recommendations = filtered_products.sample(min(5, len(filtered_products)), random_state=42) # Fallback to filtered products for sampling
+                                recommendations = filtered_products.sample(min(5, len(filtered_products)), random_state=42)
                         else:
                             st.warning("No products with valid flavor embeddings to compare after applying filters. Showing popular options.")
                             recommendations = filtered_products.sample(min(5, len(filtered_products)), random_state=42)
@@ -454,10 +405,8 @@ if not df_products.empty:
                         st.error(f"Error during semantic similarity search: {e}. Showing popular options.")
                         recommendations = filtered_products.sample(min(5, len(filtered_products)), random_state=42)
 
-            # Fallback if no specific selection and "not sure" is checked
             elif st.session_state.explore_categories and not surprise_me:
                 st.markdown("### Explore by Flavor Category:")
-                # Simple rule-based categorization if AI categorization isn't implemented elsewhere
                 def categorize_flavor_simple(row):
                     flavors = str(row['specific_flavors']).lower()
                     if 'chocolate' in flavors or 'caramel' in flavors or 'vanilla' in flavors or 'sweet' in flavors:
@@ -472,8 +421,6 @@ if not df_products.empty:
                         return 'Smooth & Balanced'
                     return 'General Favorites'
 
-                # Apply this categorization if 'flavor_category' is not already populated
-                # or if products changed due to filters
                 if 'flavor_category' not in filtered_products.columns or filtered_products['flavor_category'].isnull().all():
                      filtered_products['flavor_category'] = filtered_products.apply(categorize_flavor_simple, axis=1)
 
@@ -486,14 +433,11 @@ if not df_products.empty:
                     st.warning("No categories found after filtering. Showing general popular options.")
                     recommendations = df_products.sample(min(5, len(df_products)), random_state=42)
 
-
-            else: # No specific input, no surprise, no "not sure" selected
+            else:
                 st.info("Please describe your ideal coffee, select flavor notes, or check 'Surprise Me!' to get recommendations.")
-                # Show general favorites if no input
                 if not filtered_products.empty:
                     recommendations = filtered_products.sample(min(5, len(filtered_products)), random_state=42)
                 else:
-                    # Fallback to full dataframe if even the initial filtered_products is empty
                     recommendations = df_products.sample(min(5, len(df_products)), random_state=42)
 
 
@@ -501,32 +445,32 @@ if not df_products.empty:
         if not recommendations.empty:
             st.markdown("### Your Top Matches:")
             for idx, row in recommendations.iterrows():
-                st.markdown("---") # Separator between products
+                st.markdown("---")
                 col1, col2 = st.columns([1, 2])
                 with col1:
                     if row['image_url'] and isinstance(row['image_url'], str) and row['image_url'].startswith("http"):
                         try:
                             st.image(row['image_url'], use_container_width=True)
-                        except Exception: # Catch any error during image loading
+                        except Exception:
                             st.caption("Image not available.")
                     else:
                         st.caption("No image available.")
                 with col2:
                     st.subheader(row['name'])
                     st.markdown(f"**Category:** {row['category']}")
-                    if row['brew_method'].strip():
-                        st.markdown(f"**Brew Method:** {row['brew_method']}")
+                    # Use grind_type instead of brew_method for display
+                    if row['grind_type'].strip():
+                        st.markdown(f"**Grind Type:** {row['grind_type']}")
                     if row['roast_level'].strip():
                         st.markdown(f"**Roast Level:** {row['roast_level']}")
                     
-                    # Robust short_description display
                     clean_short_description = str(row['short_description']).strip()
                     if clean_short_description:
                         st.write(f"*{clean_short_description}*")
                     else:
                         st.write("*No short description available.*")
 
-                    st.markdown(f"**Price:** ${row['price']:.2f}") # Format price
+                    st.markdown(f"**Price:** ${row['price']:.2f}")
                     if row['specific_flavors']:
                         st.markdown(f"**Flavor Notes:** {row['specific_flavors']}")
                     st.markdown(f"[**View Product on Butler Coffee Lab**]({row['bcl_website_link']})")
