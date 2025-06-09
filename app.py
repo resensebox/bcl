@@ -136,8 +136,29 @@ if not df_products.empty:
         st.markdown("**2. How do you brew?**")
         brew_method = st.multiselect("Brew Method", ["Pods", "Ground", "Whole Bean"], default=["Ground"])
 
-        st.markdown("**3. What flavors do you love?**")
-        flavor_input = st.multiselect("Select at least two flavor notes:", options=flavor_suggestions)
+        st.markdown("**3. Tell us about your taste preferences**")
+        freeform_input = st.text_input("Describe what you like (e.g., 'I like sweet and cozy drinks')")
+
+        suggested_tags = []
+        if freeform_input.strip():
+            try:
+                ai_response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant. Based on a user's taste description, return 3-5 matching flavor notes from this list only: " + ', '.join(flavor_suggestions)},
+                        {"role": "user", "content": freeform_input}
+                    ],
+                    max_tokens=50,
+                    temperature=0.7
+                )
+                result = ai_response.choices[0].message.content.strip()
+                suggested_tags = [tag.strip() for tag in result.split(',') if tag.strip() in flavor_suggestions]
+                if suggested_tags:
+                    st.markdown("Suggested flavor tags based on what you wrote:")
+                    st.write(suggested_tags)
+            except Exception as e:
+                st.warning(f"AI suggestion failed: {e}")
+        flavor_input = st.multiselect("Select flavor notes you'd like to include:", options=flavor_suggestions, default=suggested_tags)
 
         roast_preference = "No preference"
         if drink_type == "Coffee":
@@ -193,8 +214,7 @@ if not df_products.empty:
                 else:
                     st.warning("No products available for flavor matching. Showing general picks.")
                     recommendations = filtered_products.sample(min(3, len(filtered_products)))
-                else:
-                    st.warning("No products with detailed descriptions found for flavor matching. Showing some general recommendations.")
+                
                     recommendations = filtered_products.sample(min(3, len(filtered_products))) if not filtered_products.empty else pd.DataFrame()
             else:
                 st.warning("Please select at least one flavor note. We'll still match the closest products even if not all align.")
