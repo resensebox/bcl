@@ -278,9 +278,9 @@ if not df_products.empty:
             for _, product in recommendations.iterrows():
                 # Display image if available
                 if 'image_url' in product and isinstance(product['image_url'], str) and product['image_url'].strip():
-                    st.image(product['image_url'].strip(), use_column_width=True)
+                    st.image(product['image_url'].strip(), use_container_width=True)
                 else:
-                    st.image('https://via.placeholder.com/600x400?text=No+Image+Available', use_column_width=True)
+                    st.image('https://via.placeholder.com/600x400?text=No+Image+Available', use_container_width=True)
                 st.subheader(product['name'])
                 st.write(product['short_description'])
                 st.write(f"**Flavors:** {product['flavor_tags']}")
