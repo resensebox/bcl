@@ -74,7 +74,8 @@ def get_embeddings(texts):
     valid_texts = [str(t) for t in texts if pd.notna(t) and t.strip() != '']
     if not valid_texts:
         return [np.array([])]
-    return embedder.encode(valid_texts, convert_to_tensor=True)
+    embeddings = embedder.encode(valid_texts, convert_to_tensor=True)
+    return [embeddings[i] for i in range(len(valid_texts))]
 
 # --- 4. Main App Logic ---
 st.title("\u2615\ufe0f Butler Coffee Lab – Flavor Match App")
