@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 # --- 1. Streamlit Page Configuration (MUST BE THE FIRST ST. COMMAND) ---
-st.set_set_page_config(
+st.set_page_config( # Corrected from st.set_set_page_config
     page_title="Butler Coffee Lab – Flavor Match App",
     layout="centered",
     initial_sidebar_state="auto",
@@ -263,9 +263,9 @@ if not df_products.empty:
                         t.strip() for t in ai_tags_raw.split(',') if t.strip() in all_flavor_suggestions
                     ]
 
-                    if ai_tags_filtered:
-                        st.session_state.ai_suggested_tags = ai_tags_filtered
-                        st.markdown(f"**We think you might like these flavors:** {', '.join(ai_tags_filtered)}")
+                    if ai_suggested_tags_filtered: # Corrected from ai_tags_filtered
+                        st.session_state.ai_suggested_tags = ai_suggested_tags_filtered
+                        st.markdown(f"**We think you might like these flavors:** {', '.join(ai_suggested_tags_filtered)}") # Corrected from ai_tags_filtered
                         agree_to_ai_tags = st.radio(
                             "Are these on point?",
                             ["Yes, use these", "No, I'll pick"],
@@ -335,27 +335,29 @@ if not df_products.empty:
                 st.info("No brew method selected. Displaying all products for flavor/roast matching.")
 
             # --- Size Filter ---
-            if selected_sizes and 'size' in current_filtered_products.columns:
+            if selected_sizes and 'size' in current_filtered_products.columns and not current_filtered_products.empty:
                 size_match_mask = current_filtered_products['size'].isin(selected_sizes)
                 temp_df_after_size = current_filtered_products[size_match_mask]
                 if not temp_df_after_size.empty:
                     current_filtered_products = temp_df_after_size
                 else:
                     st.warning(f"No products found matching your selected size(s): {', '.join(selected_sizes)}. Ignoring size filter.")
-                    pass # Keep previous filter results if no size matches
+                    # If no match, we don't update current_filtered_products, effectively ignoring this filter
+                    pass 
             
             # --- Caffeine Type Filter ---
-            if caffeine_preference != "No preference" and 'caffeine_type' in current_filtered_products.columns:
+            if caffeine_preference != "No preference" and 'caffeine_type' in current_filtered_products.columns and not current_filtered_products.empty:
                 caffeine_match_mask = current_filtered_products['caffeine_type'].str.contains(caffeine_preference, case=False, na=False)
                 temp_df_after_caffeine = current_filtered_products[caffeine_match_mask]
                 if not temp_df_after_caffeine.empty:
                     current_filtered_products = temp_df_after_caffeine
                 else:
                     st.warning(f"No products found matching your '{caffeine_preference}' preference. Ignoring caffeine filter.")
-                    pass # Keep previous filter results if no caffeine type matches
+                    # If no match, we don't update current_filtered_products, effectively ignoring this filter
+                    pass
 
             # --- Roast Filter ---
-            if roast_preference != "No preference":
+            if roast_preference != "No preference" and not current_filtered_products.empty:
                 roast_mask = current_filtered_products['roast_level'].str.contains(roast_preference, case=False, na=False)
                 temp_df_after_roast = current_filtered_products[roast_mask]
                 if not temp_df_after_roast.empty:
@@ -372,7 +374,7 @@ if not df_products.empty:
                 if not current_filtered_products.empty:
                     recommendations = current_filtered_products.sample(min(5, len(current_filtered_products)), random_state=42)
                 else:
-                    st.warning("No products found matching your brew/roast preferences for 'Surprise Me'. Showing top general favorites from all products.")
+                    st.warning("No products found matching your brew/roast/size/caffeine preferences for 'Surprise Me'. Showing top general favorites from all products.")
                     recommendations = df_products.sample(min(5, len(df_products)), random_state=42)
 
             elif flavor_input:
