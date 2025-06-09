@@ -199,15 +199,18 @@ if not df_products.empty:
                     st.warning("No products found matching your basic type and brew preferences for 'Surprise Me'.")
             elif flavor_input:
                 search_text = ", ".join(flavor_input)
-                products_for_similarity = filtered_products.copy()
+                products_for_similarity = filtered_products[filtered_products['long_description_embedding'].apply(lambda x: hasattr(x, 'shape') and x.shape[0] > 0)].copy()
 
                 if not products_for_similarity.empty:
                     try:
                         user_embedding = get_embeddings([search_text])[0]
                         product_embeddings = [e for e in products_for_similarity['long_description_embedding'] if hasattr(e, 'shape') and e.shape[0] > 0]
-                        cosine_scores = util.cos_sim(user_embedding, product_embeddings).detach().cpu().numpy().flatten()
+                        cosine_matrix = util.cos_sim(user_embedding, product_embeddings).detach().cpu().numpy()
+                        scores = cosine_matrix[0] if cosine_matrix.shape[0] > 0 else []
+                        products_for_similarity = products_for_similarity.head(len(scores)).copy()
+                        products_for_similarity['similarity_score'] = scores
                         products_for_similarity['similarity_score'] = cosine_scores
-                        recommendations = products_for_similarity.sort_values(by='similarity_score', ascending=False).head(10)
+                        recommendations = products_for_similarity.sort_values(by='similarity_score', ascending=False).head(5) if not products_for_similarity.empty else filtered_products.sample(min(3, len(filtered_products)))
                     except Exception as e:
                         st.warning(f"Similarity comparison failed: {e}")
                         recommendations = filtered_products.sample(min(3, len(filtered_products)))
@@ -229,6 +232,6 @@ if not df_products.empty:
                 st.write(f"**Price:** ${product['price']}")
                 st.markdown(f"[Buy Now]({product['bcl_website_link']})")
         else:
-            st.warning("Oops! We couldn't find any products that match your preferences. Try changing your choices.")
+            st.info("We're showing you a few of our favorite brews based on general preferences — try adjusting your flavor selections or just click 'Surprise Me' next time!")
 else:
     st.error("There was a problem loading the product data. Please check the app configuration and try again later.")
