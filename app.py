@@ -191,7 +191,7 @@ if not df_products.empty:
                 filtered_products = temp
 
             if brew_method:
-                temp = filtered_products[filtered_products['brew_method'].fillna('').apply(lambda x: any(x.lower() == b.lower() for b in brew_method))]
+                temp = filtered_products[filtered_products['brew_method'].fillna('').apply(lambda x: any(b.lower() in (x + ' ' + filtered_products.get('name', '')).lower() for b in brew_method))]
                 if not temp.empty:
                     filtered_products = temp
 
@@ -240,7 +240,7 @@ if not df_products.empty:
                                 st.session_state['flavor_response'] = None
 
                             if st.session_state['flavor_response'] is None:
-                                st.markdown(f"It sounds like you enjoy flavors like {', '.join(flavor_input)}. You might also like: {', '.join(new_tags)}")
+                                st.markdown(f"It sounds like you enjoy flavors like {', '.join(flavor_input)}. You might also like: {', '.join(new_tags)}")}. You might also like: {', '.join(new_tags)}")
                                 col1, col2 = st.columns(2)
                                 if col1.button("Yes, try those flavors too!"):
                                     st.session_state['flavor_response'] = 'yes'
