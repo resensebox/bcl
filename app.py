@@ -73,9 +73,9 @@ def load_data_from_google_sheets():
 def get_embeddings(texts):
     valid_texts = [str(t) for t in texts if pd.notna(t) and t.strip() != '']
     if not valid_texts:
-        return [np.array([])]
+        return []
     embeddings = embedder.encode(valid_texts, convert_to_tensor=True)
-    return [embeddings[i] for i in range(len(valid_texts))]
+    return [embeddings[i] for i in range(len(embeddings))]
 
 # --- 4. Main App Logic ---
 st.title("\u2615\ufe0f Butler Coffee Lab – Flavor Match App")
@@ -89,10 +89,11 @@ if not df_products.empty:
 
     all_embeddings = get_embeddings(cleaned_descriptions)
 
-    df_products['long_description_embedding'] = [
-        all_embeddings[i] if all_embeddings[i].size > 0 else np.array([])
-        for i in range(len(all_embeddings))
-    ]
+    if len(all_embeddings) != len(cleaned_descriptions):
+        st.error("Mismatch in embeddings. Please check data format.")
+        st.stop()
+
+    df_products['long_description_embedding'] = all_embeddings
 
     st.sidebar.header("Tell us your preferences!")
 
