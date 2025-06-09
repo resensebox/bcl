@@ -240,49 +240,7 @@ if not df_products.empty:
                                 st.session_state['flavor_response'] = None
 
                             if st.session_state['flavor_response'] is None:
-                                st.markdown(f"It sounds like you enjoy flavors like {', '.join(flavor_input)}. You might also like: {', '.join(new_tags)}")}. You might also like: {', '.join(new_tags)}")
-                                col1, col2 = st.columns(2)
-                                if col1.button("Yes, try those flavors too!"):
-                                    st.session_state['flavor_response'] = 'yes'
-                                if col2.button("No, show me other options"):
-                                    st.session_state['flavor_response'] = 'no'
-                                st.stop()
-
-                            if st.session_state['flavor_response'] == 'yes':
-                                flavor_input += new_tags
-                                products_for_similarity['flavor_overlap'] = products_for_similarity['flavor_tags'].apply(
-                                    lambda tags: len(set(flavor_input) & set([t.strip() for t in tags.split(',')] if isinstance(tags, str) else [])))
-                                matched = products_for_similarity[products_for_similarity['flavor_overlap'] > 0].copy()
-                                recommendations = matched.sort_values(by='flavor_overlap', ascending=False).head(5)
-                            else:
-                                recommendations = filtered_products.sample(min(3, len(filtered_products)))
-                    except Exception as e:
-                        st.warning(f"AI fallback suggestion failed: {e}")
-
-                if recommendations.empty:
-                    if filtered_products.empty:
-                        recommendations = df_products.sample(min(3, len(df_products)))
-                    else:
-                        recommendations = filtered_products.sample(min(3, len(filtered_products)))
-            else:
-                st.warning("Please select at least one flavor note. We'll still match the closest products even if not all align.")
-
-        if not recommendations.empty:
-            st.markdown("---")
-            st.markdown('<p style="font-size:20px; font-weight:bold;">Your Personalized Butler Coffee Lab Picks:</p>', unsafe_allow_html=True)
-
-            for _, product in recommendations.iterrows():
-                # Display image if available
-                st.text(f"🖼 Image URL: {product['image_url']}")  # Debug: Show image URL
-                if isinstance(product['image_url'], str) and product['image_url'].strip():
-                    st.image(product['image_url'].strip(), use_container_width=True)
-                else:
-                    st.image('https://via.placeholder.com/600x400?text=No+Image+Available', use_container_width=True)
-                st.subheader(product['name'])
-                st.write(product['short_description'])
-                st.write(f"**Flavors:** {product['flavor_tags']}")
-                st.write(f"**Price:** ${product['price']}")
-                st.markdown(f"[Buy Now]({product['bcl_website_link']})")
+                                st.markdown(f"It sounds like you enjoy flavors like {', '.join(flavor_input)}. You might also like: {', '.join(new_tags)}"))
         else:
             st.info("We're showing you a few of our favorite brews based on general preferences — try adjusting your flavor selections or just click 'Surprise Me' next time!")
 else:
