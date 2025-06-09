@@ -135,48 +135,49 @@ if not df_products.empty:
 
     df_products['flavor_tag_embedding'] = all_embeddings
 
-    st.sidebar.header("Tell us your preferences!")
+    st.sidebar.header("Let’s build your perfect brew together!")
 
-    with st.sidebar.form("flavor_form"):
-        st.markdown("**1. What are you in the mood for?**")
-        drink_type = st.radio("Drink Type", ["Coffee", "Tea"], horizontal=True, index=0)
+    step_description = st.sidebar.text_area("Step 1: Describe your ideal coffee moment (e.g., ‘I want something cozy for rainy mornings’, ‘a bold flavor to start my day’, or ‘smooth and sweet like dessert’)", height=100)")
+    recommended_tags = []
+    if step_description.strip():
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You’re a flavor concierge helping someone describe what they like to drink. Based on their answer, suggest 3-5 flavor notes from this list only: " + ', '.join(flavor_suggestions)},
+                    {"role": "user", "content": step_description}
+                ],
+                max_tokens=50,
+                temperature=0.7
+            )
+            tag_text = response.choices[0].message.content.strip()
+            recommended_tags = [t.strip() for t in tag_text.split(',') if t.strip() in flavor_suggestions]
+            if recommended_tags:
+                st.sidebar.markdown("These sound like a fit. Do you agree?")
+                agree = st.sidebar.radio("Are these on point?", ["Yes", "No"])
+                if agree == "Yes":
+                    st.sidebar.success("Awesome! We’ll use these to find your best match.")
+                if agree == "No":
+                    st.sidebar.markdown("Okay! Pick a few flavor notes below or rewrite your description.")
+                    recommended_tags = []
+        except Exception as e:
+            st.sidebar.warning("We had trouble understanding your flavor style. Try typing again.")
 
-        st.markdown("**2. How do you brew?**")
-        brew_method = st.multiselect("Brew Method", ["Pods", "Ground", "Whole Bean"], default=["Ground"])
+    st.sidebar.markdown("Step 2: Choose your brew method")
+    brew_method = st.sidebar.multiselect("Brew Method", ["Pods", "Ground", "Whole Bean"], default=["Ground"])
 
-        st.markdown("**3. Tell us about your taste preferences**")
-        freeform_input = st.text_input("Describe what you like (e.g., 'I like sweet and cozy drinks')")
+    st.sidebar.markdown("Step 3: Select your flavor notes (you can mix & match)")
+    flavor_input = st.sidebar.multiselect("Flavor Notes", options=flavor_suggestions, default=recommended_tags)
 
-        suggested_tags = []
-        if freeform_input.strip():
-            try:
-                ai_response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant. Based on a user's taste description, return 3-5 matching flavor notes from this list only: " + ', '.join(flavor_suggestions)},
-                        {"role": "user", "content": freeform_input}
-                    ],
-                    max_tokens=50,
-                    temperature=0.7
-                )
-                result = ai_response.choices[0].message.content.strip()
-                suggested_tags = [tag.strip() for tag in result.split(',') if tag.strip() in flavor_suggestions]
-                if suggested_tags:
-                    st.markdown("Suggested flavor tags based on what you wrote:")
-                    st.write(suggested_tags)
-            except Exception as e:
-                st.warning(f"AI suggestion failed: {e}")
-        flavor_input = st.multiselect("Select flavor notes you'd like to include:", options=flavor_suggestions, default=suggested_tags)
+    st.sidebar.markdown("Step 4: Roast Preference")
+    roast_preference = "No preference"
+    if st.sidebar.checkbox("Are you a coffee drinker?"):
+        roast_preference = st.sidebar.radio("Roast/Intensity", ["Light", "Medium", "Dark", "No preference"], horizontal=True, index=3)
 
-        roast_preference = "No preference"
-        if drink_type == "Coffee":
-            st.markdown("**4. How do you like your coffee roasted?**")
-            roast_preference = st.radio("Roast/Intensity", ["Light", "Medium", "Dark", "No preference"], horizontal=True, index=3)
+    st.sidebar.markdown("Step 5: Feeling adventurous?")
+    surprise_me = st.sidebar.checkbox("Surprise Me!")
 
-        st.markdown("**5. Feeling adventurous?**")
-        surprise_me = st.checkbox("Surprise Me!")
-
-        submitted = st.form_submit_button("Find My Perfect Match!")
+    submitted = st.sidebar.button("Find My Perfect Match!")
 
     if submitted:
         # Use AI to classify each product into a broader flavor category
@@ -211,6 +212,15 @@ if not df_products.empty:
             recommendations = pd.DataFrame()
             top_categories = df_products['flavor_category'].value_counts().head(3).index.tolist()
             if not flavor_input and not surprise_me:
+            st.markdown("""
+            #### Not sure where to start?
+            Here are some categories you might like:
+            - **Cozy & Comforting** – warm, smooth, nostalgic
+            - **Bold & Robust** – dark, strong, earthy
+            - **Sweet & Treat-like** – chocolate, caramel, vanilla
+            - **Nutty & Spiced** – hazelnut, cinnamon, pecan
+            Choose one and we’ll guide you through flavors you’ll love.
+            """)
                 st.info("Choose a flavor category to explore:")
                 chosen_category = st.selectbox("Top Flavor Categories:", options=top_categories)
                 recommendations = df_products[df_products['flavor_category'] == chosen_category].head(5)
@@ -224,11 +234,29 @@ if not df_products.empty:
                 products_for_similarity = filtered_products.copy()
                 products_for_similarity['flavor_overlap'] = products_for_similarity['flavor_tags'].apply(lambda tags: len(set(flavor_input) & set([t.strip() for t in tags.split(',')] if isinstance(tags, str) else [])))
                 matched = products_for_similarity[products_for_similarity['flavor_overlap'] > 0].copy()
+
+                if matched.empty:
+                    try:
+                        ai_adjacent = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[
+                                {"role": "system", "content": "You are a helpful assistant. Based on a list of flavors, suggest 3-5 similar or adjacent flavor notes from this list only: " + ', '.join(flavor_suggestions)},
+                                {"role": "user", "content": ', '.join(flavor_input)}
+                            ],
+                            max_tokens=50,
+                            temperature=0.7
+                        )
+                        new_tags = [tag.strip() for tag in ai_adjacent.choices[0].message.content.strip().split(',') if tag.strip() in flavor_suggestions]
+                        if new_tags:
+                            st.markdown(f"It sounds like you enjoy flavors like {', '.join(flavor_input)}. You might also like: {', '.join(new_tags)}")
+                            flavor_input += new_tags
+                            matched = products_for_similarity[products_for_similarity['flavor_tags'].apply(lambda tags: len(set(flavor_input) & set([t.strip() for t in tags.split(',')] if isinstance(tags, str) else []))) > 0]
+                    except Exception as e:
+                        st.warning(f"AI fallback flavor suggestions failed: {e}")
                 recommendations = matched.sort_values(by='flavor_overlap', ascending=False).head(5)
 
                 if recommendations.empty:
-                    if recommendations.empty:
-                        st.info("We're showing you a few of our favorite brews based on general preferences — try adjusting your flavor selections or just click 'Surprise Me' next time!")
+                        st.info("No exact flavor match found. Showing general favorites — or try exploring adjacent flavors next time!")
                 else:
                     st.markdown("### Your Matches:")
                     for _, row in recommendations.iterrows():
