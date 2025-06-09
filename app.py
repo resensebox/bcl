@@ -77,6 +77,29 @@ def get_embeddings(texts):
     embeddings = embedder.encode(valid_texts, convert_to_tensor=True)
     return [embeddings[i] for i in range(len(embeddings))]
 
+@st.cache_data(ttl=3600)
+def extract_flavor_tags(descriptions):
+    prompts = [
+        {"role": "system", "content": "Extract 3 to 5 unique flavor notes from the product description. Return them as a comma-separated list."},
+    ]
+    tags = []
+    for desc in descriptions:
+        if not desc.strip():
+            tags.append("")
+            continue
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=prompts + [{"role": "user", "content": desc}],
+                max_tokens=50,
+                temperature=0.7
+            )
+            tag_text = response.choices[0].message.content.strip()
+            tags.append(tag_text)
+        except:
+            tags.append("")
+    return tags
+
 # --- 4. Main App Logic ---
 st.title("\u2615\ufe0f Butler Coffee Lab – Flavor Match App")
 st.markdown("### Find your perfect brew, support a great cause!")
@@ -84,9 +107,18 @@ st.markdown("### Find your perfect brew, support a great cause!")
 df_products = load_data_from_google_sheets()
 
 if not df_products.empty:
+    df_products['flavor_tags'] = extract_flavor_tags(df_products['long_description'].fillna(''))
+
+    flavor_suggestions = sorted(set(
+        tag.strip()
+        for tag_list in df_products['flavor_tags'].str.split(',')
+        if isinstance(tag_list, list)
+        for tag in tag_list
+        if tag.strip()
+    ))
+
     valid_descriptions = df_products['long_description'].fillna('').tolist()
     cleaned_descriptions = [desc if desc.strip() != '' else 'general product description' for desc in valid_descriptions]
-
     all_embeddings = get_embeddings(cleaned_descriptions)
 
     if len(all_embeddings) != len(cleaned_descriptions):
@@ -102,27 +134,15 @@ if not df_products.empty:
         drink_type = st.radio("Drink Type", ["Coffee", "Tea"], horizontal=True, index=0)
 
         st.markdown("**2. How do you brew?**")
-        brew_method = st.multiselect(
-            "Brew Method",
-            ["Pods", "Ground", "Whole Bean"],
-            default=["Ground"]
-        )
+        brew_method = st.multiselect("Brew Method", ["Pods", "Ground", "Whole Bean"], default=["Ground"])
 
         st.markdown("**3. What flavors do you love?**")
-        flavor_input = st.text_input(
-            "Enter flavor notes (e.g., chocolate, nutty, smooth)",
-            placeholder="e.g., chocolate, caramel, fruity, bold"
-        )
+        flavor_input = st.multiselect("Select at least two flavor notes:", options=flavor_suggestions)
 
         roast_preference = "No preference"
         if drink_type == "Coffee":
             st.markdown("**4. How do you like your coffee roasted?**")
-            roast_preference = st.radio(
-                "Roast/Intensity",
-                ["Light", "Medium", "Dark", "No preference"],
-                horizontal=True,
-                index=3
-            )
+            roast_preference = st.radio("Roast/Intensity", ["Light", "Medium", "Dark", "No preference"], horizontal=True, index=3)
 
         st.markdown("**5. Feeling adventurous?**")
         surprise_me = st.checkbox("Surprise Me!")
@@ -156,13 +176,14 @@ if not df_products.empty:
                     recommendations = filtered_products.sample(min(5, len(filtered_products)), random_state=42)
                 else:
                     st.warning("No products found matching your basic type and brew preferences for 'Surprise Me'.")
-            elif flavor_input:
+            elif flavor_input and len(flavor_input) >= 2:
+                search_text = ", ".join(flavor_input)
                 products_for_similarity = filtered_products[
                     filtered_products['long_description_embedding'].apply(lambda x: x is not None and hasattr(x, 'numel') and x.numel() > 0)
                 ].copy()
 
                 if not products_for_similarity.empty:
-                    user_embedding = get_embeddings([flavor_input])[0]
+                    user_embedding = get_embeddings([search_text])[0]
                     cosine_scores = util.cos_sim(user_embedding, [e for e in products_for_similarity['long_description_embedding']])[0]
                     products_for_similarity['similarity_score'] = cosine_scores.cpu().numpy()
                     recommendations = products_for_similarity.sort_values(by='similarity_score', ascending=False).head(5)
@@ -170,8 +191,7 @@ if not df_products.empty:
                     st.warning("No products with detailed descriptions found for flavor matching. Showing some general recommendations.")
                     recommendations = filtered_products.sample(min(3, len(filtered_products))) if not filtered_products.empty else pd.DataFrame()
             else:
-                st.info("No flavor notes entered. Showing some popular picks based on your brew preferences.")
-                recommendations = filtered_products.sample(min(3, len(filtered_products))) if not filtered_products.empty else pd.DataFrame()
+                st.warning("Please select at least two flavor notes for better matching results.")
 
         if not recommendations.empty:
             st.markdown("---")
