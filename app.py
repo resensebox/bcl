@@ -137,7 +137,7 @@ if not df_products.empty:
 
     st.sidebar.header("Let’s build your perfect brew together!")
 
-    step_description = st.sidebar.text_area("Step 1: Describe your ideal coffee moment (e.g., 'I want something cozy for rainy mornings', 'a bold flavor to start my day', or 'smooth and sweet like dessert')", height=100)", height=100)")
+    step_description = st.sidebar.text_area("Step 1: Describe your ideal coffee moment (e.g., 'I want something cozy for rainy mornings', 'a bold flavor to start my day', or 'smooth and sweet like dessert')", height=100)", height=100)", height=100)")
     recommended_tags = []
     if step_description.strip():
         try:
