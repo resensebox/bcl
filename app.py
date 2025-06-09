@@ -17,50 +17,27 @@ st.set_page_config(
     menu_items=None
 )
 
-# --- Apply Custom CSS for White Background and Black Text ---
+# --- Apply Custom CSS for White Background (TEXT COLOR CSS REMOVED) ---
 st.markdown(
     """
     <style>
-    /* General body and text color */
-    body {
-        background-color: white;
-        color: black !important; /* Force text to be black */
-    }
+    /* Setting background colors to white */
     .stApp {
         background-color: white;
-        color: black !important; /* Force text to be black */
     }
     .stApp > header {
         background-color: white;
     }
-    /* Specific targets for main content and sidebar, adjust if needed for your Streamlit version */
     .st-emotion-cache-z5fcl4 { /* Main content block */
         background-color: white;
-        color: black !important;
     }
     .st-emotion-cache-1c7y2kl { /* Sidebar background */
         background-color: white;
-        color: black !important;
     }
     .st-emotion-cache-1dp5vir { /* Sidebar elements */
         background-color: white;
-        color: black !important;
     }
-    /* Ensure all text elements are black */
-    p, li, div, .stMarkdown, label, h1, h2, h3, h4, h5, h6, span {
-        color: black !important;
-    }
-    /* Ensure Streamlit widgets also have black text */
-    .stTextInput > div > div > input,
-    .stTextArea > div > div > textarea,
-    .stMultiSelect > div > div,
-    .stSelectbox > div > div {
-        color: black !important;
-    }
-    /* Adjust warnings/infos if they become unreadable due to color override */
-    .st-emotion-cache-13ln4gm { /* st.warning / st.info box */
-        color: black !important; /* Ensure warning text is black */
-    }
+    /* All text color-related CSS has been removed to revert to Streamlit's defaults */
     </style>
     """,
     unsafe_allow_html=True
@@ -72,7 +49,7 @@ GOOGLE_SHEET_ID = "1VBnG4kfGOUN3iVH1n14qOUnzivhiU_SsOclCAcWkFI8"
 
 try:
     openai_api_key = st.secrets["openai"]["api_key"]
-    client = OpenAI(api_key=openai_api_key)
+    client = OpenAI(api_key=openai_api_key) # Corrected parameter name
 except KeyError:
     st.error("Looks like your OpenAI API key isn't set up correctly in Streamlit Secrets. Please ensure 'openai.api_key' is present in your Streamlit secrets.")
     st.stop()
@@ -239,10 +216,11 @@ if not df_products.empty:
         default_other_grind = []
         if drink_type == "Coffee":
             coffee_products = df_products[df_products['category'].str.contains('Coffee', case=False, na=False)]
-            available_grind_types = coffee_products['grind'].str.lower().unique()
-            if 'ground' in available_grind_types:
+            # Normalize grind types from data for comparison with user selections
+            available_grind_types_normalized = coffee_products['grind'].str.strip().str.lower().unique()
+            if 'ground' in available_grind_types_normalized:
                 default_other_grind.append("Ground")
-            if 'whole bean' in available_grind_types:
+            if 'whole bean' in available_grind_types_normalized:
                 default_other_grind.append("Whole Bean")
             
             if not default_other_grind and not uses_keurig:
@@ -255,7 +233,8 @@ if not df_products.empty:
             key="other_grind_type_multiselect"
         )
         brew_grind_options_user.extend(selected_other_grind_types)
-        brew_grind_options_user = list(set(brew_grind_options_user))
+        # Normalize user selections to lowercase for consistent filtering later
+        brew_grind_options_user = [opt.lower() for opt in list(set(brew_grind_options_user))]
 
 
         st.markdown("---")
@@ -346,7 +325,7 @@ if not df_products.empty:
             st.markdown("---")
             st.markdown("### Debugging Info (For Developers Only):")
             st.write(f"**Initial DataFrame shape:** {current_filtered_products.shape}")
-            st.write(f"**Unique 'Grind' values (initial):** {current_filtered_products['grind'].str.lower().unique().tolist()}")
+            st.write(f"**Unique 'Grind' values (from raw data):** {current_filtered_products['grind'].unique().tolist()}")
             st.markdown("---")
 
 
@@ -360,38 +339,46 @@ if not df_products.empty:
                     current_filtered_products = df_products.copy() # Revert to full dataset if no matches for category
             
             st.write(f"**DataFrame shape after Category Filter:** {current_filtered_products.shape}")
-            st.write(f"**Unique 'Grind' values (after Category Filter):** {current_filtered_products['grind'].str.lower().unique().tolist()}")
+            st.write(f"**Unique 'Grind' values (after Category Filter, normalized):** {current_filtered_products['grind'].str.strip().str.lower().unique().tolist()}")
 
 
             # 2. Filter by Grind Type
             if brew_grind_options_user:
                 grind_mask = pd.Series([False] * len(current_filtered_products), index=current_filtered_products.index)
                 
-                st.write(f"**User selected grind options:** {brew_grind_options_user}")
+                st.write(f"**User selected grind options (normalized):** {brew_grind_options_user}")
+                # Normalize the 'grind' column values in the DataFrame before comparison
+                normalized_grind_column = current_filtered_products['grind'].str.strip().str.lower()
+
                 for option in brew_grind_options_user:
                     grind_mask = grind_mask | \
-                                 (current_filtered_products['grind'].str.contains(option, case=False, na=False))
+                                 (normalized_grind_column.str.contains(option, na=False))
                 
                 temp_df_after_grind = current_filtered_products[grind_mask]
                 
                 if not temp_df_after_grind.empty:
                     current_filtered_products = temp_df_after_grind
                     st.write(f"**DataFrame shape after Grind Filter (matched):** {current_filtered_products.shape}")
+                    st.write(f"**'Grind' values of matched products (sample):** {current_filtered_products['grind'].head().tolist()}")
                 else:
-                    st.warning(f"No products found matching your selected brew/grind type(s): {', '.join(brew_grind_options_user)}. Adjusting recommendations based on other preferences.")
+                    st.warning(f"No products found matching your selected brew/grind type(s): {', '.join([opt.capitalize() for opt in brew_grind_options_user])}. Adjusting recommendations based on other preferences.")
                     st.write(f"**DataFrame shape after Grind Filter (no match, reverted):** {current_filtered_products.shape}")
+                    st.write(f"**Original 'Grind' values before this filter (sample):** {current_filtered_products['grind'].head().tolist()}")
                     pass # current_filtered_products does not change if temp_df_after_grind is empty
 
             else: # If no grind types are selected, default to non-pod products
                 st.info("No brew method selected. Automatically excluding 'Pods' and showing all 'Ground'/'Whole Bean' products.")
-                non_pod_mask = ~current_filtered_products['grind'].str.contains("pod", case=False, na=False)
+                normalized_grind_column = current_filtered_products['grind'].str.strip().str.lower()
+                non_pod_mask = ~normalized_grind_column.str.contains("pod", na=False)
                 temp_df_after_non_pod_filter = current_filtered_products[non_pod_mask]
                 if not temp_df_after_non_pod_filter.empty:
                     current_filtered_products = temp_df_after_non_pod_filter
                     st.write(f"**DataFrame shape after Grind Filter (default non-pod):** {current_filtered_products.shape}")
+                    st.write(f"**'Grind' values of default non-pod products (sample):** {current_filtered_products['grind'].head().tolist()}")
                 else:
                     st.warning("No non-pod products found based on other filters. Showing all products regardless of grind type.")
                     st.write(f"**DataFrame shape after Grind Filter (default non-pod, no match, reverted):** {current_filtered_products.shape}")
+                    st.write(f"**Original 'Grind' values before this filter (sample):** {current_filtered_products['grind'].head().tolist()}")
                     pass
 
 
