@@ -17,98 +17,7 @@ st.set_page_config(
     menu_items=None
 )
 
-# --- Apply Custom CSS for White Background (Main) and Dark Sidebar with White Text ---
-st.markdown(
-    """
-    <style>
-    /* Overall app background and default text color for main content */
-    .stApp {
-        background-color: #FFFFFF; /* White background for main content */
-        color: #1A1A1A; /* Very dark gray text for main content */
-    }
-
-    /* Header background - keep it white for consistency with main content */
-    .stApp > header {
-        background-color: #FFFFFF;
-    }
-
-    /* Main content area - ensure it's white background and dark text */
-    .st-emotion-cache-z5fcl4 { /* This class is often for the main content block */
-        background-color: #FFFFFF;
-        color: #1A1A1A;
-    }
-
-    /* Sidebar specific colors: Dark background, White text */
-    .st-emotion-cache-1c7y2kl { /* This is often the main sidebar container */
-        background-color: #1A1A1A; /* Dark background for sidebar */
-        color: #FFFFFF; /* White text for sidebar */
-    }
-    .st-emotion-cache-1dp5vir { /* Sidebar elements/padding */
-        background-color: #1A1A1A; /* Dark background for sidebar */
-    }
-
-    /* Ensure all text elements within the sidebar are white */
-    .st-emotion-cache-1c7y2kl p, 
-    .st-emotion-cache-1c7y2kl li, 
-    .st-emotion-cache-1c7y2kl div, 
-    .st-emotion-cache-1c7y2kl .stMarkdown, 
-    .st-emotion-cache-1c7y2kl label, 
-    .st-emotion-cache-1c7y2kl h1, 
-    .st-emotion-cache-1c7y2kl h2, 
-    .st-emotion-cache-1c7y2kl h3, 
-    .st-emotion-cache-1c7y2kl h4, 
-    .st-emotion-cache-1c7y2kl h5, 
-    .st-emotion-cache-1c7y2kl h6, 
-    .st-emotion-cache-1c7y2kl span {
-        color: #FFFFFF !important; /* Force white text within the sidebar */
-    }
-
-    /* Input widgets text color (within sidebar) */
-    .st-emotion-cache-1c7y2kl .stTextInput > div > div > input,
-    .st-emotion-cache-1c7y2kl .stTextArea > div > div > textarea,
-    .st-emotion-cache-1c7y2kl .stMultiSelect > div > div,
-    .st-emotion-cache-1c7y2kl .stSelectbox > div > div > div > div > div.st-emotion-cache-nahz7x {
-        color: #FFFFFF; /* White text for input widgets in sidebar */
-        background-color: #333333; /* Slightly lighter dark for input fields */
-    }
-    
-    /* Ensure selectbox dropdown options have proper contrast */
-    div[data-baseweb="select"] > div {
-        background-color: #FFFFFF; /* White background for dropdown list */
-        color: #1A1A1A; /* Dark text for dropdown list items */
-    }
-    div[data-baseweb="select"] div[role="option"] {
-        color: #1A1A1A; /* Dark text for individual options */
-    }
-    div[data-baseweb="select"] div[role="option"]:hover {
-        background-color: #E0E0E0; /* Light hover background */
-    }
-
-
-    /* For selected multiselect options (the chips) within the sidebar */
-    .st-emotion-cache-1c7y2kl .stMultiSelect div.st-emotion-cache-1h6dgbk { /* Chip background */
-        background-color: #555555; /* A darker grey for the chip background */
-        color: #FFFFFF; /* White text on the chip */
-    }
-
-    /* Radio button and checkbox labels (within sidebar) */
-    .st-emotion-cache-1c7y2kl .stRadio > label, 
-    .st-emotion-cache-1c7y2kl .stCheckbox > label {
-        color: #FFFFFF;
-    }
-    
-    /* General text elements in main content, just to be safe */
-    body, p, li, div, .stMarkdown, label, h1, h2, h3, h4, h5, h6, span {
-        color: #1A1A1A; /* Ensure main content text is dark */
-    }
-    /* Warning/info boxes in main content */
-    .st-emotion-cache-13ln4gm { /* Streamlit's default class for warning/info/success boxes */
-        color: #1A1A1A; /* Ensure warning text is black */
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+# --- NO CUSTOM CSS APPLIED ---
 
 
 # --- 2. Configuration & Initialization ---
@@ -116,7 +25,7 @@ GOOGLE_SHEET_ID = "1VBnG4kfGOUN3iVH1n14qOUnzivhiU_SsOclCAcWkFI8"
 
 try:
     openai_api_key = st.secrets["openai"]["api_key"]
-    client = OpenAI(api_key=openai_api_key) # Corrected parameter name
+    client = OpenAI(api_key=openai_api_key)
 except KeyError:
     st.error("Looks like your OpenAI API key isn't set up correctly in Streamlit Secrets. Please ensure 'openai.api_key' is present in your Streamlit secrets.")
     st.stop()
@@ -393,15 +302,16 @@ if not df_products.empty:
             st.markdown("### Debugging Info (For Developers Only):")
             
             # Highlight the Grind Filter issue clearly
+            # This logic remains as it helps diagnose data issues
             if 'grind' in current_filtered_products.columns and \
                'pods' in current_filtered_products['grind'].str.strip().str.lower().unique().tolist() and \
-               'ground' in brew_grind_options_user: # Check if 'ground' is in user selection
+               any(g_opt in ['ground', 'whole bean'] for g_opt in brew_grind_options_user):
                 st.error("""
                 **ATTENTION: GRIND FILTER ISSUE DETECTED!**
                 
-                The debugging info shows that **after the Category filter, your dataset only contains 'Pods' coffee, but you selected 'Ground' (or similar) grind type.**
+                The debugging info shows that **after the Category filter, your dataset predominantly contains 'Pods' coffee, but you selected 'Ground' or 'Whole Bean' grind type.**
                 
-                **This means there are NO 'Ground' (or 'Whole Bean') coffee products in your Google Sheet that match your selected category.**
+                **This means there are NO 'Ground' or 'Whole Bean' coffee products in your Google Sheet that match your selected category.**
                 
                 Please check your Google Sheet for products where:
                 1.  **Category is 'Coffee'** (or your selected category)
@@ -429,34 +339,38 @@ if not df_products.empty:
             st.write(f"**Unique 'Grind' values (after Category Filter, normalized):** {current_filtered_products['grind'].str.strip().str.lower().unique().tolist()}")
 
 
-            # 2. Filter by Grind Type
+            # --- REWRITTEN GRIND FILTERING ---
             if brew_grind_options_user:
-                grind_mask = pd.Series([False] * len(current_filtered_products), index=current_filtered_products.index)
+                # Normalize the 'grind' column in the DataFrame for consistent matching
+                normalized_df_grind = current_filtered_products['grind'].str.strip().str.lower()
+                
+                # Create a boolean mask for products matching any of the user's selected grind types
+                grind_match_mask = pd.Series([False] * len(current_filtered_products), index=current_filtered_products.index)
                 
                 st.write(f"**User selected grind options (normalized):** {brew_grind_options_user}")
-                # Normalize the 'grind' column values in the DataFrame for direct comparison
-                normalized_grind_column_for_filter = current_filtered_products['grind'].str.strip().str.lower()
-
-                for option in brew_grind_options_user:
-                    grind_mask = grind_mask | \
-                                 (normalized_grind_column_for_filter.str.contains(option, na=False))
                 
-                temp_df_after_grind = current_filtered_products[grind_mask]
+                for user_option in brew_grind_options_user:
+                    # Check if the normalized DataFrame grind value *contains* the normalized user option
+                    # This handles cases like "Ground (for Drip)" matching "ground"
+                    grind_match_mask = grind_match_mask | normalized_df_grind.str.contains(user_option, na=False)
+                
+                temp_df_after_grind = current_filtered_products[grind_match_mask]
                 
                 if not temp_df_after_grind.empty:
                     current_filtered_products = temp_df_after_grind
                     st.write(f"**DataFrame shape after Grind Filter (matched):** {current_filtered_products.shape}")
-                    st.write(f"**'Grind' values of matched products (sample):** {current_filtered_products['grind'].head(5).tolist()}") # Show sample of actual values
+                    st.write(f"**'Grind' values of matched products (sample):** {current_filtered_products['grind'].head(5).tolist()}")
                 else:
                     st.warning(f"No products found matching your selected brew/grind type(s): {', '.join([opt.capitalize() for opt in brew_grind_options_user])}. Adjusting recommendations based on other preferences.")
                     st.write(f"**DataFrame shape after Grind Filter (no match, reverted):** {current_filtered_products.shape}")
-                    st.write(f"**Original 'Grind' values before this filter (sample):** {current_filtered_products['grind'].head(5).tolist()}") # Show sample before filter was applied
-                    pass # current_filtered_products does not change if temp_df_after_grind is empty
-
-            else: # If no grind types are selected, default to non-pod products
+                    st.write(f"**Original 'Grind' values before this filter (sample):** {current_filtered_products['grind'].head(5).tolist()}")
+                    # No change to current_filtered_products if no match, effectively ignoring the filter for this step
+                    pass 
+            else: # If no grind types are selected by the user
                 st.info("No brew method selected. Automatically excluding 'Pods' and showing all 'Ground'/'Whole Bean' products.")
-                normalized_grind_column_for_filter = current_filtered_products['grind'].str.strip().str.lower()
-                non_pod_mask = ~normalized_grind_column_for_filter.str.contains("pod", na=False)
+                normalized_df_grind = current_filtered_products['grind'].str.strip().str.lower()
+                # Exclude anything containing "pod" if no specific grind is selected
+                non_pod_mask = ~normalized_df_grind.str.contains("pod", na=False)
                 temp_df_after_non_pod_filter = current_filtered_products[non_pod_mask]
                 if not temp_df_after_non_pod_filter.empty:
                     current_filtered_products = temp_df_after_non_pod_filter
