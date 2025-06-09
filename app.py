@@ -227,31 +227,6 @@ if not df_products.empty:
                 recommendations = matched.sort_values(by='flavor_overlap', ascending=False).head(5)
 
                 if recommendations.empty:
-                    # Use AI to suggest adjacent tags
-                    try:
-                        response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
-                            messages=[
-                                {"role": "system", "content": "You are a helpful assistant that enhances vague or short flavor preferences by suggesting related tags."},
-                                {"role": "user", "content": f"These are the flavor notes the user selected: {', '.join(flavor_input)}. Suggest 3-5 similar or adjacent flavor notes that appear in this list: {', '.join(flavor_suggestions)}."}
-                            ],
-                            max_tokens=100,
-                            temperature=0.7
-                        )
-                        new_tags = response.choices[0].message.content.strip().split(',')
-                        new_tags = [tag.strip() for tag in new_tags if tag.strip() in flavor_suggestions and tag.strip() not in flavor_input]
-                        if new_tags:
-                            st.session_state.setdefault('ai_flavor_suggestion', None)
-                            st.session_state.setdefault('flavor_response', None)
-                            if st.session_state['ai_flavor_suggestion'] != new_tags:
-                                st.session_state['ai_flavor_suggestion'] = new_tags
-                                st.session_state['flavor_response'] = None
-
-                            if st.session_state['flavor_response'] is None:
-                                st.markdown(f"It sounds like you enjoy flavors like {', '.join(flavor_input)}. You might also like: {', '.join(new_tags)}")
-                    except Exception as e:
-                        st.warning(f"Error during flavor recommendation fallback: {e}")
-                        if recommendations.empty:
     st.info("We're showing you a few of our favorite brews based on general preferences — try adjusting your flavor selections or just click 'Surprise Me' next time!")
                 else:
                     st.markdown("### Your Matches:")
