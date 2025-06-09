@@ -204,8 +204,8 @@ if not df_products.empty:
                 if not products_for_similarity.empty:
                     try:
                         user_embedding = get_embeddings([search_text])[0]
-                        product_embeddings = [e for e in products_for_similarity['long_description_embedding']]
-                        cosine_scores = util.cos_sim(user_embedding, product_embeddings)[0].cpu().numpy()
+                        product_embeddings = [e for e in products_for_similarity['long_description_embedding'] if hasattr(e, 'shape') and e.shape[0] > 0]
+                        cosine_scores = util.cos_sim(user_embedding, product_embeddings).detach().cpu().numpy().flatten()
                         products_for_similarity['similarity_score'] = cosine_scores
                         recommendations = products_for_similarity.sort_values(by='similarity_score', ascending=False).head(10)
                     except Exception as e:
