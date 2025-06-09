@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 # --- 1. Streamlit Page Configuration (MUST BE THE FIRST ST. COMMAND) ---
-st.set_page_config( # Corrected from st.set_set_page_config
+st.set_page_config(
     page_title="Butler Coffee Lab – Flavor Match App",
     layout="centered",
     initial_sidebar_state="auto",
@@ -56,18 +56,23 @@ def load_data_from_google_sheets():
         df = pd.DataFrame(data)
 
         # Sanitize column names
+        original_columns = df.columns.tolist()
         df.columns = [re.sub(r'[^a-z0-9_]', '', col.lower().replace(' ', '_')) for col in df.columns]
 
-        # Ensure 'grind', 'size', and 'caffeine_type' are in required columns
-        required_cols = ['name', 'category', 'short_description', 'long_description', 'price', 'bcl_website_link', 'grind', 'size', 'caffeine_type']
+        # Debug: Show original and sanitized columns
+        # st.sidebar.write(f"Original Columns: {original_columns}")
+        # st.sidebar.write(f"Sanitized Columns: {df.columns.tolist()}")
+
+        # Ensure 'grind', 'size', and 'caffeine' are in required columns
+        # CHANGED: 'caffeine_type' to 'caffeine'
+        required_cols = ['name', 'category', 'short_description', 'long_description', 'price', 'bcl_website_link', 'grind', 'size', 'caffeine']
         for col in required_cols:
             if col not in df.columns:
                 st.warning(f"Missing recommended column in Google Sheet: '{col}'. Please add it for full functionality. Proceeding without this filter.")
-                # Add the missing column with empty strings so the app doesn't crash
-                df[col] = ''
+                df[col] = '' # Add the missing column with empty strings
 
         # Ensure essential columns exist, add if missing
-        if 'brew_method' not in df.columns: # Keeping for compatibility, but 'grind' is preferred
+        if 'brew_method' not in df.columns:
             df['brew_method'] = ''
         if 'roast_level' not in df.columns:
             df['roast_level'] = ''
@@ -75,7 +80,8 @@ def load_data_from_google_sheets():
             df['image_url'] = ''
 
         # Convert relevant columns to string type to prevent errors during processing
-        for col in ['name', 'category', 'short_description', 'long_description', 'brew_method', 'roast_level', 'bcl_website_link', 'image_url', 'grind', 'price', 'size', 'caffeine_type']:
+        # CHANGED: 'caffeine_type' to 'caffeine'
+        for col in ['name', 'category', 'short_description', 'long_description', 'brew_method', 'roast_level', 'bcl_website_link', 'image_url', 'grind', 'price', 'size', 'caffeine']:
             if col in df.columns:
                 df[col] = df[col].apply(lambda x: str(x) if pd.notna(x) else '')
             else:
@@ -83,6 +89,14 @@ def load_data_from_google_sheets():
 
         # Attempt to convert price to numeric, coercing errors
         df['price'] = pd.to_numeric(df['price'], errors='coerce').fillna(0.0)
+
+        # Debug: Show unique values for size and caffeine before filtering them
+        if 'size' in df.columns:
+            st.sidebar.write(f"Raw unique 'size' values: {df['size'].unique().tolist()}")
+        # CHANGED: 'caffeine_type' to 'caffeine'
+        if 'caffeine' in df.columns:
+            st.sidebar.write(f"Raw unique 'caffeine' values: {df['caffeine'].unique().tolist()}")
+
 
         return df
     except Exception as e:
@@ -223,13 +237,14 @@ if not df_products.empty:
             selected_sizes = []
 
         # Caffeine Type Filter
-        available_caffeine_types = sorted(list(set([ct.strip() for ct in df_products['caffeine_type'].unique() if ct.strip()])))
+        # CHANGED: 'caffeine_type' to 'caffeine'
+        available_caffeine_types = sorted(list(set([ct.strip() for ct in df_products['caffeine'].unique() if ct.strip()])))
         if available_caffeine_types:
             caffeine_preference = st.radio(
                 "Caffeine Preference:",
                 ["No preference"] + available_caffeine_types,
                 index=0,
-                key="caffeine_type_radio"
+                key="caffeine_type_radio" # Kept key name for internal consistency, doesn't affect functionality
             )
         else:
             st.info("No caffeine type options available in data.")
@@ -263,9 +278,9 @@ if not df_products.empty:
                         t.strip() for t in ai_tags_raw.split(',') if t.strip() in all_flavor_suggestions
                     ]
 
-                    if ai_suggested_tags_filtered: # Corrected from ai_tags_filtered
+                    if ai_suggested_tags_filtered: 
                         st.session_state.ai_suggested_tags = ai_suggested_tags_filtered
-                        st.markdown(f"**We think you might like these flavors:** {', '.join(ai_suggested_tags_filtered)}") # Corrected from ai_tags_filtered
+                        st.markdown(f"**We think you might like these flavors:** {', '.join(ai_suggested_tags_filtered)}") 
                         agree_to_ai_tags = st.radio(
                             "Are these on point?",
                             ["Yes, use these", "No, I'll pick"],
@@ -342,18 +357,17 @@ if not df_products.empty:
                     current_filtered_products = temp_df_after_size
                 else:
                     st.warning(f"No products found matching your selected size(s): {', '.join(selected_sizes)}. Ignoring size filter.")
-                    # If no match, we don't update current_filtered_products, effectively ignoring this filter
                     pass 
             
             # --- Caffeine Type Filter ---
-            if caffeine_preference != "No preference" and 'caffeine_type' in current_filtered_products.columns and not current_filtered_products.empty:
-                caffeine_match_mask = current_filtered_products['caffeine_type'].str.contains(caffeine_preference, case=False, na=False)
+            # CHANGED: 'caffeine_type' to 'caffeine'
+            if caffeine_preference != "No preference" and 'caffeine' in current_filtered_products.columns and not current_filtered_products.empty:
+                caffeine_match_mask = current_filtered_products['caffeine'].str.contains(caffeine_preference, case=False, na=False)
                 temp_df_after_caffeine = current_filtered_products[caffeine_match_mask]
                 if not temp_df_after_caffeine.empty:
                     current_filtered_products = temp_df_after_caffeine
                 else:
                     st.warning(f"No products found matching your '{caffeine_preference}' preference. Ignoring caffeine filter.")
-                    # If no match, we don't update current_filtered_products, effectively ignoring this filter
                     pass
 
             # --- Roast Filter ---
@@ -478,8 +492,9 @@ if not df_products.empty:
                         st.markdown(f"**Roast Level:** {row['roast_level']}")
                     if row['size'].strip():
                         st.markdown(f"**Size:** {row['size']}") # Display size
-                    if row['caffeine_type'].strip():
-                        st.markdown(f"**Caffeine Type:** {row['caffeine_type']}") # Display caffeine type
+                    # CHANGED: 'caffeine_type' to 'caffeine'
+                    if row['caffeine'].strip():
+                        st.markdown(f"**Caffeine Type:** {row['caffeine']}") # Display caffeine type
                     
                     clean_short_description = str(row['short_description']).strip()
                     if clean_short_description:
