@@ -106,8 +106,8 @@ st.markdown("### Find your perfect brew, support a great cause!")
 
 df_products = load_data_from_google_sheets()
 
-    # Add 'specific_flavors' column from extracted flavor_tags
-    if 'specific_flavors' not in df_products.columns:
+# Add 'specific_flavors' column from extracted flavor_tags
+if 'specific_flavors' not in df_products.columns:
         df_products['specific_flavors'] = extract_flavor_tags(df_products['long_description'].fillna(''))
 
 if not df_products.empty:
