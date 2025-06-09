@@ -17,32 +17,50 @@ st.set_page_config(
     menu_items=None
 )
 
-# --- Apply Custom CSS for White Background ---
-# Streamlit's default text color should provide good contrast on white.
-# We are only explicitly setting background colors here.
+# --- Apply Custom CSS for White Background and Black Text ---
 st.markdown(
     """
     <style>
+    /* General body and text color */
+    body {
+        background-color: white;
+        color: black !important; /* Force text to be black */
+    }
     .stApp {
         background-color: white;
+        color: black !important; /* Force text to be black */
     }
     .stApp > header {
         background-color: white;
     }
-    /* These target specific Streamlit components to ensure a consistent white background */
+    /* Specific targets for main content and sidebar, adjust if needed for your Streamlit version */
     .st-emotion-cache-z5fcl4 { /* Main content block */
         background-color: white;
+        color: black !important;
     }
     .st-emotion-cache-1c7y2kl { /* Sidebar background */
         background-color: white;
+        color: black !important;
     }
     .st-emotion-cache-1dp5vir { /* Sidebar elements */
         background-color: white;
+        color: black !important;
     }
-    /* You may need to inspect your deployed app to find the exact class names for Streamlit
-       components if you notice any remaining dark backgrounds from the default theme.
-       However, the above covers most common areas.
-    */
+    /* Ensure all text elements are black */
+    p, li, div, .stMarkdown, label, h1, h2, h3, h4, h5, h6, span {
+        color: black !important;
+    }
+    /* Ensure Streamlit widgets also have black text */
+    .stTextInput > div > div > input,
+    .stTextArea > div > div > textarea,
+    .stMultiSelect > div > div,
+    .stSelectbox > div > div {
+        color: black !important;
+    }
+    /* Adjust warnings/infos if they become unreadable due to color override */
+    .st-emotion-cache-13ln4gm { /* st.warning / st.info box */
+        color: black !important; /* Ensure warning text is black */
+    }
     </style>
     """,
     unsafe_allow_html=True
@@ -325,6 +343,13 @@ if not df_products.empty:
         with st.spinner("Finding your perfect matches..."):
             current_filtered_products = df_products.copy()
 
+            st.markdown("---")
+            st.markdown("### Debugging Info (For Developers Only):")
+            st.write(f"**Initial DataFrame shape:** {current_filtered_products.shape}")
+            st.write(f"**Unique 'Grind' values (initial):** {current_filtered_products['grind'].str.lower().unique().tolist()}")
+            st.markdown("---")
+
+
             # 1. Filter by Drink Type (Category)
             if drink_type and drink_type != "Other":
                 category_mask = current_filtered_products['category'].str.contains(drink_type, case=False, na=False)
@@ -333,26 +358,28 @@ if not df_products.empty:
                 else:
                     st.warning(f"No products found specifically for '{drink_type}'. Proceeding with all categories to apply other filters.")
                     current_filtered_products = df_products.copy() # Revert to full dataset if no matches for category
+            
+            st.write(f"**DataFrame shape after Category Filter:** {current_filtered_products.shape}")
+            st.write(f"**Unique 'Grind' values (after Category Filter):** {current_filtered_products['grind'].str.lower().unique().tolist()}")
+
 
             # 2. Filter by Grind Type
             if brew_grind_options_user:
                 grind_mask = pd.Series([False] * len(current_filtered_products), index=current_filtered_products.index)
                 
+                st.write(f"**User selected grind options:** {brew_grind_options_user}")
                 for option in brew_grind_options_user:
                     grind_mask = grind_mask | \
                                  (current_filtered_products['grind'].str.contains(option, case=False, na=False))
                 
-                # Apply the grind filter. If it results in an empty DataFrame, issue a warning.
-                # Do NOT revert `current_filtered_products` to a prior state here if it becomes empty.
-                # This ensures that even if no grind matches, other filters (like flavor) can still apply to the (category-filtered) products.
                 temp_df_after_grind = current_filtered_products[grind_mask]
                 
                 if not temp_df_after_grind.empty:
                     current_filtered_products = temp_df_after_grind
+                    st.write(f"**DataFrame shape after Grind Filter (matched):** {current_filtered_products.shape}")
                 else:
                     st.warning(f"No products found matching your selected brew/grind type(s): {', '.join(brew_grind_options_user)}. Adjusting recommendations based on other preferences.")
-                    # If this filter makes it empty, current_filtered_products retains its state from *before* this grind filter.
-                    # This allows subsequent filters (like flavor) to still operate on the broader set if the grind filter was too strict.
+                    st.write(f"**DataFrame shape after Grind Filter (no match, reverted):** {current_filtered_products.shape}")
                     pass # current_filtered_products does not change if temp_df_after_grind is empty
 
             else: # If no grind types are selected, default to non-pod products
@@ -361,9 +388,10 @@ if not df_products.empty:
                 temp_df_after_non_pod_filter = current_filtered_products[non_pod_mask]
                 if not temp_df_after_non_pod_filter.empty:
                     current_filtered_products = temp_df_after_non_pod_filter
+                    st.write(f"**DataFrame shape after Grind Filter (default non-pod):** {current_filtered_products.shape}")
                 else:
                     st.warning("No non-pod products found based on other filters. Showing all products regardless of grind type.")
-                    # Revert to the state before trying to exclude pods if that makes it empty
+                    st.write(f"**DataFrame shape after Grind Filter (default non-pod, no match, reverted):** {current_filtered_products.shape}")
                     pass
 
 
@@ -376,6 +404,9 @@ if not df_products.empty:
                 else:
                     st.warning(f"No coffee found with '{roast_preference}' roast level matching other criteria. Ignoring roast level filter.")
                     pass
+            
+            st.write(f"**DataFrame shape after Roast Filter:** {current_filtered_products.shape}")
+            st.markdown("---")
 
 
             # Now, apply flavor matching or surprise logic
