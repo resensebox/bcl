@@ -227,7 +227,7 @@ if not df_products.empty:
                 recommendations = matched.sort_values(by='flavor_overlap', ascending=False).head(5)
 
                 if recommendations.empty:
-    st.info("We're showing you a few of our favorite brews based on general preferences — try adjusting your flavor selections or just click 'Surprise Me' next time!")
+                    st.info("We're showing you a few of our favorite brews based on general preferences — try adjusting your flavor selections or just click 'Surprise Me' next time!")
                 else:
                     st.markdown("### Your Matches:")
                     for _, row in recommendations.iterrows():
