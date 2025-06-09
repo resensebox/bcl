@@ -17,38 +17,32 @@ st.set_page_config(
     menu_items=None
 )
 
-# --- Apply Custom CSS for White Background and Black Text ---
+# --- Apply Custom CSS for White Background ---
+# Streamlit's default text color should provide good contrast on white.
+# We are only explicitly setting background colors here.
 st.markdown(
     """
     <style>
     .stApp {
         background-color: white;
-        color: black; /* Set default text color to black */
     }
     .stApp > header {
         background-color: white;
     }
-    /* Specific targets for main content and sidebar, adjust if needed for your Streamlit version */
+    /* These target specific Streamlit components to ensure a consistent white background */
     .st-emotion-cache-z5fcl4 { /* Main content block */
         background-color: white;
-        color: black;
     }
     .st-emotion-cache-1c7y2kl { /* Sidebar background */
-        background-color: white; /* Changed to pure white for consistency */
-        color: black;
+        background-color: white;
     }
     .st-emotion-cache-1dp5vir { /* Sidebar elements */
         background-color: white;
-        color: black;
     }
-    /* Ensure markdown text is black */
-    p, li, div, .stMarkdown {
-        color: black;
-    }
-    /* Ensure header text is black */
-    h1, h2, h3, h4, h5, h6 {
-        color: black;
-    }
+    /* You may need to inspect your deployed app to find the exact class names for Streamlit
+       components if you notice any remaining dark backgrounds from the default theme.
+       However, the above covers most common areas.
+    */
     </style>
     """,
     unsafe_allow_html=True
@@ -93,7 +87,7 @@ def load_data_from_google_sheets():
         # Sanitize column names
         df.columns = [re.sub(r'[^a-z0-9_]', '', col.lower().replace(' ', '_')) for col in df.columns]
 
-        # Updated 'grind_type' to 'grind' as per your change
+        # Ensure 'grind' is in required columns
         required_cols = ['name', 'category', 'short_description', 'long_description', 'price', 'bcl_website_link', 'grind']
         for col in required_cols:
             if col not in df.columns:
@@ -101,7 +95,7 @@ def load_data_from_google_sheets():
                 return pd.DataFrame()
 
         # Ensure essential columns exist, add if missing
-        if 'brew_method' not in df.columns: # Keeping for now, but will primarily use 'grind'
+        if 'brew_method' not in df.columns: # Keeping for compatibility, but 'grind' is preferred
             df['brew_method'] = ''
         if 'roast_level' not in df.columns:
             df['roast_level'] = ''
@@ -109,7 +103,7 @@ def load_data_from_google_sheets():
             df['image_url'] = ''
 
         # Convert relevant columns to string type to prevent errors during processing
-        for col in ['name', 'category', 'short_description', 'long_description', 'brew_method', 'roast_level', 'bcl_website_link', 'image_url', 'grind', 'price']: # Changed 'grind_type' to 'grind'
+        for col in ['name', 'category', 'short_description', 'long_description', 'brew_method', 'roast_level', 'bcl_website_link', 'image_url', 'grind', 'price']:
             if col in df.columns:
                 df[col] = df[col].apply(lambda x: str(x) if pd.notna(x) else '')
             else:
@@ -227,14 +221,14 @@ if not df_products.empty:
         default_other_grind = []
         if drink_type == "Coffee":
             coffee_products = df_products[df_products['category'].str.contains('Coffee', case=False, na=False)]
-            available_grind_types = coffee_products['grind'].str.lower().unique() # Changed to 'grind'
+            available_grind_types = coffee_products['grind'].str.lower().unique()
             if 'ground' in available_grind_types:
                 default_other_grind.append("Ground")
             if 'whole bean' in available_grind_types:
                 default_other_grind.append("Whole Bean")
             
             if not default_other_grind and not uses_keurig:
-                default_other_grind = ["Ground"] # Sensible default if nothing else is pre-selected
+                default_other_grind = ["Ground"]
         
         selected_other_grind_types = st.multiselect(
             "Select other grind type(s):",
@@ -329,54 +323,56 @@ if not df_products.empty:
     # --- Main Content Area for Results ---
     if submitted:
         with st.spinner("Finding your perfect matches..."):
-            filtered_products = df_products.copy()
+            current_filtered_products = df_products.copy()
 
-            # 1. Filter by Drink Type (Category) - Strict
+            # 1. Filter by Drink Type (Category)
             if drink_type and drink_type != "Other":
-                category_mask = filtered_products['category'].str.contains(drink_type, case=False, na=False)
+                category_mask = current_filtered_products['category'].str.contains(drink_type, case=False, na=False)
                 if category_mask.any():
-                    filtered_products = filtered_products[category_mask]
+                    current_filtered_products = current_filtered_products[category_mask]
                 else:
                     st.warning(f"No products found specifically for '{drink_type}'. Proceeding with all categories to apply other filters.")
-                    filtered_products = df_products.copy() # Revert to full dataset if this filter yields no results
+                    current_filtered_products = df_products.copy() # Revert to full dataset if no matches for category
 
-            # 2. Filter by Grind Type (using the 'grind' column) - Simpler Logic
-            # This logic prioritizes matching the selected grind type.
-            # If nothing matches the selected grind type after category filtering, it will warn
-            # but *not* revert to a state where grind type isn't filtered.
+            # 2. Filter by Grind Type
             if brew_grind_options_user:
-                grind_type_mask = pd.Series([False] * len(filtered_products), index=filtered_products.index)
+                grind_mask = pd.Series([False] * len(current_filtered_products), index=current_filtered_products.index)
                 
                 for option in brew_grind_options_user:
-                    grind_type_mask = grind_type_mask | \
-                                      (filtered_products['grind'].str.contains(option, case=False, na=False))
+                    grind_mask = grind_mask | \
+                                 (current_filtered_products['grind'].str.contains(option, case=False, na=False))
                 
-                temp_filtered_products = filtered_products[grind_type_mask]
-
-                if not temp_filtered_products.empty:
-                    filtered_products = temp_filtered_products
+                # Apply the grind filter. If it results in an empty DataFrame, issue a warning.
+                # Do NOT revert `current_filtered_products` to a prior state here if it becomes empty.
+                # This ensures that even if no grind matches, other filters (like flavor) can still apply to the (category-filtered) products.
+                temp_df_after_grind = current_filtered_products[grind_mask]
+                
+                if not temp_df_after_grind.empty:
+                    current_filtered_products = temp_df_after_grind
                 else:
                     st.warning(f"No products found matching your selected brew/grind type(s): {', '.join(brew_grind_options_user)}. Adjusting recommendations based on other preferences.")
-                    # Keep `filtered_products` as it was before this specific grind filter was applied
-                    # This means if no grind types match, the original `filtered_products` (post-category filter) is used for flavor/roast matching.
-                    pass # `filtered_products` is not updated, effectively skipping this filter if it makes the df empty
+                    # If this filter makes it empty, current_filtered_products retains its state from *before* this grind filter.
+                    # This allows subsequent filters (like flavor) to still operate on the broader set if the grind filter was too strict.
+                    pass # current_filtered_products does not change if temp_df_after_grind is empty
 
-            else: # If no grind types are selected, show all non-pod products by default
+            else: # If no grind types are selected, default to non-pod products
                 st.info("No brew method selected. Automatically excluding 'Pods' and showing all 'Ground'/'Whole Bean' products.")
-                non_pod_mask = ~filtered_products['grind'].str.contains("pod", case=False, na=False)
-                temp_filtered_products = filtered_products[non_pod_mask]
-                if not temp_filtered_products.empty:
-                    filtered_products = temp_filtered_products
+                non_pod_mask = ~current_filtered_products['grind'].str.contains("pod", case=False, na=False)
+                temp_df_after_non_pod_filter = current_filtered_products[non_pod_mask]
+                if not temp_df_after_non_pod_filter.empty:
+                    current_filtered_products = temp_df_after_non_pod_filter
                 else:
                     st.warning("No non-pod products found based on other filters. Showing all products regardless of grind type.")
+                    # Revert to the state before trying to exclude pods if that makes it empty
+                    pass
 
 
-            # 3. Filter by Roast Preference (only for Coffee) - Strict
+            # 3. Filter by Roast Preference (only for Coffee)
             if drink_type == "Coffee" and roast_preference != "No preference":
-                roast_mask = filtered_products['roast_level'].str.contains(roast_preference, case=False, na=False)
-                temp_filtered_products = filtered_products[roast_mask]
-                if not temp_filtered_products.empty:
-                    filtered_products = temp_filtered_products
+                roast_mask = current_filtered_products['roast_level'].str.contains(roast_preference, case=False, na=False)
+                temp_df_after_roast = current_filtered_products[roast_mask]
+                if not temp_df_after_roast.empty:
+                    current_filtered_products = temp_df_after_roast
                 else:
                     st.warning(f"No coffee found with '{roast_preference}' roast level matching other criteria. Ignoring roast level filter.")
                     pass
@@ -386,14 +382,14 @@ if not df_products.empty:
             recommendations = pd.DataFrame()
 
             if surprise_me:
-                if not filtered_products.empty:
-                    recommendations = filtered_products.sample(min(5, len(filtered_products)), random_state=42)
+                if not current_filtered_products.empty:
+                    recommendations = current_filtered_products.sample(min(5, len(current_filtered_products)), random_state=42)
                 else:
                     st.warning("No products found matching your basic type and brew preferences for 'Surprise Me'. Showing top general favorites from all products.")
                     recommendations = df_products.sample(min(5, len(df_products)), random_state=42)
 
             elif flavor_input:
-                products_for_similarity = filtered_products.copy()
+                products_for_similarity = current_filtered_products.copy()
 
                 products_for_similarity['flavor_overlap_score'] = products_for_similarity['flavor_tags'].apply(
                     lambda tags: len(set(flavor_input) & set([t.strip() for t in tags.split(',')] if isinstance(tags, str) else []))
@@ -427,15 +423,15 @@ if not df_products.empty:
                                 st.success("Found some great matches with similar flavor profiles!")
                             else:
                                 st.warning("Even with AI, we couldn't find close flavor matches after applying all filters. Showing some popular options instead.")
-                                recommendations = filtered_products.sample(min(5, len(filtered_products)), random_state=42)
+                                recommendations = current_filtered_products.sample(min(5, len(current_filtered_products)), random_state=42)
                         else:
                             st.warning("No products with valid flavor embeddings to compare after applying filters. Showing popular options.")
-                            recommendations = filtered_products.sample(min(5, len(filtered_products)), random_state=42)
+                            recommendations = current_filtered_products.sample(min(5, len(current_filtered_products)), random_state=42)
 
 
                     except Exception as e:
                         st.error(f"Error during semantic similarity search: {e}. Showing popular options.")
-                        recommendations = filtered_products.sample(min(5, len(filtered_products)), random_state=42)
+                        recommendations = current_filtered_products.sample(min(5, len(current_filtered_products)), random_state=42)
 
             elif st.session_state.explore_categories and not surprise_me:
                 st.markdown("### Explore by Flavor Category:")
@@ -453,13 +449,13 @@ if not df_products.empty:
                         return 'Smooth & Balanced'
                     return 'General Favorites'
 
-                if 'flavor_category' not in filtered_products.columns or filtered_products['flavor_category'].isnull().all():
-                     filtered_products['flavor_category'] = filtered_products.apply(categorize_flavor_simple, axis=1)
+                if 'flavor_category' not in current_filtered_products.columns or current_filtered_products['flavor_category'].isnull().all():
+                     current_filtered_products['flavor_category'] = current_filtered_products.apply(categorize_flavor_simple, axis=1)
 
-                top_categories = filtered_products['flavor_category'].value_counts().head(5).index.tolist()
+                top_categories = current_filtered_products['flavor_category'].value_counts().head(5).index.tolist()
                 if top_categories:
                     chosen_category = st.selectbox("Select a popular flavor category:", options=top_categories, key="chosen_category_select")
-                    recommendations = filtered_products[filtered_products['flavor_category'] == chosen_category].head(5)
+                    recommendations = current_filtered_products[current_filtered_products['flavor_category'] == chosen_category].head(5)
                     st.info(f"Showing popular products in the '{chosen_category}' category.")
                 else:
                     st.warning("No categories found after filtering. Showing general popular options.")
@@ -467,8 +463,8 @@ if not df_products.empty:
 
             else:
                 st.info("Please describe your ideal coffee, select flavor notes, or check 'Surprise Me!' to get recommendations.")
-                if not filtered_products.empty:
-                    recommendations = filtered_products.sample(min(5, len(filtered_products)), random_state=42)
+                if not current_filtered_products.empty:
+                    recommendations = current_filtered_products.sample(min(5, len(current_filtered_products)), random_state=42)
                 else:
                     recommendations = df_products.sample(min(5, len(df_products)), random_state=42)
 
@@ -490,7 +486,7 @@ if not df_products.empty:
                 with col2:
                     st.subheader(row['name'])
                     st.markdown(f"**Category:** {row['category']}")
-                    if row['grind'].strip(): # Changed to 'grind'
+                    if row['grind'].strip():
                         st.markdown(f"**Grind Type:** {row['grind']}")
                     if row['roast_level'].strip():
                         st.markdown(f"**Roast Level:** {row['roast_level']}")
