@@ -18,10 +18,10 @@ st.set_page_config(
 )
 
 # --- 2. Configuration & Initialization ---
-GOOGLE_SHEET_URL = "YOUR_GOOGLE_SHEET_URL_HERE"
+GOOGLE_SHEET_URL = "1VBnG4kfGOUN3iVH1n14qOUnzivhiU_SsOclCAcWkFI8"
 
 try:
-    openai_api_key = st.secrets["open_ai_key"]
+    openai_api_key = st.secrets["openai"]["api_key"]
     client = OpenAI(api_key=openai_api_key)
 except KeyError:
     st.error("Looks like your OpenAI API key isn't set up correctly in Streamlit Secrets. Please ensure 'open_ai_key' is present.")
