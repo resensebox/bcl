@@ -250,8 +250,10 @@ if not df_products.empty:
                             if st.session_state['flavor_response'] is None:
                                 st.markdown(f"It sounds like you enjoy flavors like {', '.join(flavor_input)}. You might also like: {', '.join(new_tags)}")
                     except Exception as e:
+                        st.warning(f"Error during flavor recommendation fallback: {e}")
                         if recommendations.empty:
-                    st.info("We're showing you a few of our favorite brews based on general preferences — try adjusting your flavor selections or just click 'Surprise Me' next time!")
+                    if recommendations.empty:
+    st.info("We're showing you a few of our favorite brews based on general preferences — try adjusting your flavor selections or just click 'Surprise Me' next time!")
                 else:
                     st.markdown("### Your Matches:")
                     for _, row in recommendations.iterrows():
