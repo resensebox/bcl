@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 # --- 1. Streamlit Page Configuration (MUST BE THE FIRST ST. COMMAND) ---
-st.set_page_config(
+st.set_set_page_config(
     page_title="Butler Coffee Lab – Flavor Match App",
     layout="centered",
     initial_sidebar_state="auto",
@@ -58,12 +58,13 @@ def load_data_from_google_sheets():
         # Sanitize column names
         df.columns = [re.sub(r'[^a-z0-9_]', '', col.lower().replace(' ', '_')) for col in df.columns]
 
-        # Ensure 'grind' is in required columns
-        required_cols = ['name', 'category', 'short_description', 'long_description', 'price', 'bcl_website_link', 'grind']
+        # Ensure 'grind', 'size', and 'caffeine_type' are in required columns
+        required_cols = ['name', 'category', 'short_description', 'long_description', 'price', 'bcl_website_link', 'grind', 'size', 'caffeine_type']
         for col in required_cols:
             if col not in df.columns:
-                st.error(f"Missing required column in Google Sheet: '{col}'. Please check your sheet headers (e.g., 'Category' becomes 'category', 'Grind' becomes 'grind').")
-                return pd.DataFrame()
+                st.warning(f"Missing recommended column in Google Sheet: '{col}'. Please add it for full functionality. Proceeding without this filter.")
+                # Add the missing column with empty strings so the app doesn't crash
+                df[col] = ''
 
         # Ensure essential columns exist, add if missing
         if 'brew_method' not in df.columns: # Keeping for compatibility, but 'grind' is preferred
@@ -74,12 +75,11 @@ def load_data_from_google_sheets():
             df['image_url'] = ''
 
         # Convert relevant columns to string type to prevent errors during processing
-        for col in ['name', 'category', 'short_description', 'long_description', 'brew_method', 'roast_level', 'bcl_website_link', 'image_url', 'grind', 'price']:
+        for col in ['name', 'category', 'short_description', 'long_description', 'brew_method', 'roast_level', 'bcl_website_link', 'image_url', 'grind', 'price', 'size', 'caffeine_type']:
             if col in df.columns:
                 df[col] = df[col].apply(lambda x: str(x) if pd.notna(x) else '')
             else:
-                df[col] = ''
-
+                df[col] = '' # Ensure it's added as string even if missing
 
         # Attempt to convert price to numeric, coercing errors
         df['price'] = pd.to_numeric(df['price'], errors='coerce').fillna(0.0)
@@ -176,10 +176,8 @@ if not df_products.empty:
     with st.sidebar:
         st.header("Let’s find your perfect brew!")
 
-        # Removed Step 1: Category Selection
-
         st.markdown("---")
-        st.subheader("Step 1: How do you brew?") # Renumbered to Step 1
+        st.subheader("Step 1: How do you brew?")
         
         brew_grind_options_user = [] 
         
@@ -209,9 +207,36 @@ if not df_products.empty:
         # Normalize user selections to lowercase for consistent filtering later
         brew_grind_options_user = [opt.lower() for opt in list(set(brew_grind_options_user))]
 
+        st.markdown("---")
+        st.subheader("Step 2: Size & Caffeine Type")
+
+        # Size/Weight Filter
+        available_sizes = sorted(list(set([s.strip() for s in df_products['size'].unique() if s.strip()])))
+        if available_sizes:
+            selected_sizes = st.multiselect(
+                "Select desired size(s):",
+                options=available_sizes,
+                key="size_multiselect"
+            )
+        else:
+            st.info("No size options available in data.")
+            selected_sizes = []
+
+        # Caffeine Type Filter
+        available_caffeine_types = sorted(list(set([ct.strip() for ct in df_products['caffeine_type'].unique() if ct.strip()])))
+        if available_caffeine_types:
+            caffeine_preference = st.radio(
+                "Caffeine Preference:",
+                ["No preference"] + available_caffeine_types,
+                index=0,
+                key="caffeine_type_radio"
+            )
+        else:
+            st.info("No caffeine type options available in data.")
+            caffeine_preference = "No preference"
 
         st.markdown("---")
-        st.subheader("Step 2: Tell us about your ideal flavor.") # Renumbered to Step 2
+        st.subheader("Step 3: Tell us about your ideal flavor.")
 
         if 'ai_suggested_tags' not in st.session_state:
             st.session_state.ai_suggested_tags = []
@@ -238,9 +263,9 @@ if not df_products.empty:
                         t.strip() for t in ai_tags_raw.split(',') if t.strip() in all_flavor_suggestions
                     ]
 
-                    if ai_suggested_tags_filtered:
-                        st.session_state.ai_suggested_tags = ai_suggested_tags_filtered
-                        st.markdown(f"**We think you might like these flavors:** {', '.join(ai_suggested_tags_filtered)}")
+                    if ai_tags_filtered:
+                        st.session_state.ai_suggested_tags = ai_tags_filtered
+                        st.markdown(f"**We think you might like these flavors:** {', '.join(ai_tags_filtered)}")
                         agree_to_ai_tags = st.radio(
                             "Are these on point?",
                             ["Yes, use these", "No, I'll pick"],
@@ -272,8 +297,7 @@ if not df_products.empty:
             st.session_state.explore_categories = False
 
         st.markdown("---")
-        st.subheader("Step 3: Roast Preference") # Renumbered to Step 3
-        # Removed conditional roast preference based on drink type
+        st.subheader("Step 4: Roast Preference")
         roast_preference = st.radio(
             "Roast/Intensity (primarily for Coffee):",
             ["Light", "Medium", "Dark", "No preference"],
@@ -281,10 +305,9 @@ if not df_products.empty:
             index=3,
             key="roast_preference_radio"
         )
-        # Removed else block for roast preference info
 
         st.markdown("---")
-        st.subheader("Step 4: Ready to discover?") # Renumbered to Step 4
+        st.subheader("Step 5: Ready to discover?")
         surprise_me = st.checkbox("Surprise Me!", key="surprise_me_checkbox")
         submitted = st.button("Find My Perfect Match!", type="primary", key="find_match_button")
 
@@ -293,29 +316,10 @@ if not df_products.empty:
         with st.spinner("Finding your perfect matches..."):
             current_filtered_products = df_products.copy()
 
-            st.markdown("---")
-            st.markdown("### Debugging Info (For Developers Only):")
-            
-            # Simplified Debugging Info for Grind Filter - now it's the primary filter
-            if 'grind' in current_filtered_products.columns and \
-               not brew_grind_options_user and \
-               (current_filtered_products['grind'].str.strip().str.lower().str.contains('pod', na=False).any() or \
-                current_filtered_products['grind'].str.strip().str.lower().str.contains('ground', na=False).any() or \
-                current_filtered_products['grind'].str.strip().str.lower().str.contains('whole bean', na=False).any()):
-                st.info("No specific grind type selected by user. App will filter to show all products based on their listed grind type (Pods, Ground, Whole Bean).")
-
-
-            st.write(f"**Initial DataFrame shape:** {current_filtered_products.shape}")
-            st.write(f"**Unique 'Grind' values (from raw data):** {current_filtered_products['grind'].unique().tolist()}")
-            st.markdown("---")
-
-
-            # --- Grind Filter (now the primary filter) ---
+            # --- Grind Filter ---
             if brew_grind_options_user:
                 normalized_df_grind = current_filtered_products['grind'].str.strip().str.lower()
                 grind_match_mask = pd.Series([False] * len(current_filtered_products), index=current_filtered_products.index)
-                
-                st.write(f"**User selected grind options (normalized):** {brew_grind_options_user}")
                 
                 for user_option in brew_grind_options_user:
                     grind_match_mask = grind_match_mask | normalized_df_grind.str.contains(user_option, na=False)
@@ -324,21 +328,34 @@ if not df_products.empty:
                 
                 if not temp_df_after_grind.empty:
                     current_filtered_products = temp_df_after_grind
-                    st.write(f"**DataFrame shape after Grind Filter (matched):** {current_filtered_products.shape}")
-                    st.write(f"**'Grind' values of matched products (sample):** {current_filtered_products['grind'].head(5).tolist()}")
                 else:
                     st.warning(f"No products found matching your selected brew/grind type(s): {', '.join([opt.capitalize() for opt in brew_grind_options_user])}. Adjusting recommendations based on other preferences.")
-                    st.write(f"**DataFrame shape after Grind Filter (no match, reverted):** {current_filtered_products.shape}")
-                    st.write(f"**Original 'Grind' values before this filter (sample):** {current_filtered_products['grind'].head(5).tolist()}")
                     pass 
-            else: # If no grind types are selected by the user, keep all products initially (before roast/flavor)
+            else:
                 st.info("No brew method selected. Displaying all products for flavor/roast matching.")
-                st.write(f"**DataFrame shape after Grind Filter (no selection, all kept):** {current_filtered_products.shape}")
-                st.write(f"**Original 'Grind' values before this filter (sample):** {current_filtered_products['grind'].head(5).tolist()}")
 
+            # --- Size Filter ---
+            if selected_sizes and 'size' in current_filtered_products.columns:
+                size_match_mask = current_filtered_products['size'].isin(selected_sizes)
+                temp_df_after_size = current_filtered_products[size_match_mask]
+                if not temp_df_after_size.empty:
+                    current_filtered_products = temp_df_after_size
+                else:
+                    st.warning(f"No products found matching your selected size(s): {', '.join(selected_sizes)}. Ignoring size filter.")
+                    pass # Keep previous filter results if no size matches
+            
+            # --- Caffeine Type Filter ---
+            if caffeine_preference != "No preference" and 'caffeine_type' in current_filtered_products.columns:
+                caffeine_match_mask = current_filtered_products['caffeine_type'].str.contains(caffeine_preference, case=False, na=False)
+                temp_df_after_caffeine = current_filtered_products[caffeine_match_mask]
+                if not temp_df_after_caffeine.empty:
+                    current_filtered_products = temp_df_after_caffeine
+                else:
+                    st.warning(f"No products found matching your '{caffeine_preference}' preference. Ignoring caffeine filter.")
+                    pass # Keep previous filter results if no caffeine type matches
 
-            # 2. Filter by Roast Preference (now renumbered to Step 2)
-            if roast_preference != "No preference": # Apply roast preference to all products, as category is removed
+            # --- Roast Filter ---
+            if roast_preference != "No preference":
                 roast_mask = current_filtered_products['roast_level'].str.contains(roast_preference, case=False, na=False)
                 temp_df_after_roast = current_filtered_products[roast_mask]
                 if not temp_df_after_roast.empty:
@@ -347,9 +364,6 @@ if not df_products.empty:
                     st.warning(f"No products found with '{roast_preference}' roast level matching other criteria. Ignoring roast level filter.")
                     pass
             
-            st.write(f"**DataFrame shape after Roast Filter:** {current_filtered_products.shape}")
-            st.markdown("---")
-
 
             # Now, apply flavor matching or surprise logic
             recommendations = pd.DataFrame()
@@ -449,20 +463,21 @@ if not df_products.empty:
                 st.markdown("---")
                 col1, col2 = st.columns([1, 2])
                 with col1:
+                    # Directly use st.image with the URL
                     if row['image_url'] and isinstance(row['image_url'], str) and row['image_url'].startswith("http"):
-                        try:
-                            st.image(row['image_url'], use_container_width=True)
-                        except Exception:
-                            st.caption("Image not available.")
+                        st.image(row['image_url'], use_container_width=True)
                     else:
                         st.caption("No image available.")
                 with col2:
                     st.subheader(row['name'])
-                    # st.markdown(f"**Category:** {row['category']}") # Removed Category display
                     if row['grind'].strip():
                         st.markdown(f"**Grind Type:** {row['grind']}")
                     if row['roast_level'].strip():
                         st.markdown(f"**Roast Level:** {row['roast_level']}")
+                    if row['size'].strip():
+                        st.markdown(f"**Size:** {row['size']}") # Display size
+                    if row['caffeine_type'].strip():
+                        st.markdown(f"**Caffeine Type:** {row['caffeine_type']}") # Display caffeine type
                     
                     clean_short_description = str(row['short_description']).strip()
                     if clean_short_description:
