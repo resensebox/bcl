@@ -70,6 +70,16 @@ def load_data_from_google_sheets():
         if 'image_url' not in df.columns:
             df['image_url'] = ''
 
+        # Convert relevant columns to string type to prevent errors during processing
+        df['name'] = df['name'].astype(str)
+        df['category'] = df['category'].astype(str)
+        df['short_description'] = df['short_description'].astype(str)
+        df['long_description'] = df['long_description'].astype(str)
+        df['brew_method'] = df['brew_method'].astype(str)
+        df['roast_level'] = df['roast_level'].astype(str)
+        df['bcl_website_link'] = df['bcl_website_link'].astype(str)
+
+
         return df
     except Exception as e:
         st.error(f"Uh oh! Couldn't load data from Google Sheets. Error: {e}")
@@ -86,10 +96,15 @@ def get_embeddings(texts):
     return [embeddings[i] for i in range(len(embeddings))]
 
 @st.cache_data(ttl=3600, show_spinner="Extracting AI flavor tags...")
-def extract_flavor_tags(descriptions):
-    """Extracts flavor tags from descriptions using OpenAI."""
+def extract_flavor_tags(data_series_name, data_series_long_desc):
+    """Extracts flavor tags from descriptions (and names) using OpenAI."""
     tags = []
-    for i, desc in enumerate(descriptions):
+    # Combine name and long_description for better flavor extraction context
+    combined_descriptions = [
+        f"{name}. {desc}" for name, desc in zip(data_series_name.fillna(''), data_series_long_desc.fillna(''))
+    ]
+
+    for i, desc in enumerate(combined_descriptions):
         if not desc or not desc.strip():
             tags.append("")
             continue
@@ -106,7 +121,7 @@ def extract_flavor_tags(descriptions):
             tag_text = response.choices[0].message.content.strip()
             tags.append(tag_text)
         except Exception as e:
-            # st.warning(f"Error extracting tags for item {i}: {e}") # Debugging
+            # st.warning(f"Error extracting tags for item {i}: {e}") # Debugging: uncomment for development
             tags.append("") # Append empty string on error
     return tags
 
@@ -117,10 +132,12 @@ st.markdown("### Find your perfect brew, support a great cause!")
 df_products = load_data_from_google_sheets()
 
 if not df_products.empty:
-    # Pre-process flavor tags only once
-    if 'specific_flavors' not in df_products.columns or df_products['specific_flavors'].isnull().any():
-        with st.spinner("Analyzing product flavors with AI (this may take a moment on first run)..."):
-            df_products['specific_flavors'] = extract_flavor_tags(df_products['long_description'].fillna(''))
+    # Pre-process flavor tags only once, considering both name and long_description
+    if 'specific_flavors' not in df_products.columns or df_products['specific_flavors'].isnull().any() or "" in df_products['specific_flavors'].values: # Re-run if any are empty
+        with st.spinner("Analyzing product flavors with AI (this may take a moment on first run or if data updated)..."):
+            df_products['specific_flavors'] = extract_flavor_tags(
+                df_products['name'], df_products['long_description']
+            )
             # Filter out empty or whitespace-only tags
             df_products['specific_flavors'] = df_products['specific_flavors'].apply(
                 lambda x: ', '.join([tag.strip() for tag in x.split(',') if tag.strip()]) if isinstance(x, str) else ''
@@ -152,21 +169,30 @@ if not df_products.empty:
 
         st.markdown("---")
         st.subheader("Step 2: How do you brew?")
+        
+        brew_method_options_user = [] # This will hold the user's selected brew methods
+        
         uses_keurig = st.checkbox("Do you use a Keurig (for pods)?", key="uses_keurig_checkbox")
-        brew_method_options = []
         if uses_keurig:
-            brew_method_options.append("Pods")
-        # Only show other brew methods if not using Keurig OR if they want to select multiple
-        # Changed this logic slightly to allow more flexibility even if Keurig is checked
+            brew_method_options_user.append("Pods") # Automatically add Pods if Keurig is checked
+        
+        # Determine default for ground/whole bean based on available data
+        default_other_brew = []
+        if "ground" in df_products['brew_method'].str.lower().unique() or \
+           any("ground" in name.lower() for name in df_products['name'].unique()):
+            default_other_brew.append("Ground")
+        if "whole bean" in df_products['brew_method'].str.lower().unique() or \
+           any("whole bean" in name.lower() for name in df_products['name'].unique()):
+            default_other_brew.append("Whole Bean")
+
         selected_other_brew_methods = st.multiselect(
-            "Select your brew method(s):",
+            "Select other brew method(s):",
             ["Ground", "Whole Bean"],
-            default=["Ground"] if "Ground" in df_products['brew_method'].str.lower().unique() else [],
+            default=default_other_brew,
             key="other_brew_method_multiselect"
         )
-        brew_method_options.extend(selected_other_brew_methods)
-        # Ensure unique elements in brew_method_options
-        brew_method_options = list(set(brew_method_options))
+        brew_method_options_user.extend(selected_other_brew_methods)
+        brew_method_options_user = list(set(brew_method_options_user)) # Ensure unique elements
 
 
         st.markdown("---")
@@ -260,34 +286,79 @@ if not df_products.empty:
             current_filtered_products = df_products.copy()
 
             # 1. Filter by Drink Type (Category)
-            if drink_type:
+            if drink_type and drink_type != "Other": # Only filter if a specific type is chosen
                 temp_df = current_filtered_products[current_filtered_products['category'].str.contains(drink_type, case=False, na=False)]
                 if not temp_df.empty:
                     current_filtered_products = temp_df
                 else:
-                    st.warning(f"No products found specifically for '{drink_type}'. Broadening search to all categories.")
-                    # If category filter yields nothing, we keep all products to apply other filters
-                    current_filtered_products = df_products.copy()
+                    st.warning(f"No products found specifically for '{drink_type}'. Displaying results from all categories that match other filters.")
+                    current_filtered_products = df_products.copy() # Revert to full list to apply other filters
+
 
             # 2. Filter by Brew Method
-            if brew_method_options: # Check if any brew methods were selected
-                # Convert brew_method_options to lowercase for case-insensitive matching
-                brew_method_lower = [b.lower() for b in brew_method_options]
+            # Map common names to expected brew_method values for robust filtering
+            brew_method_mapping = {
+                "pods": "Pods",
+                "ground": "Ground",
+                "whole bean": "Whole Bean",
+                "k-cup": "Pods", # Add common variants
+                "k cup": "Pods",
+                "single serve": "Pods"
+            }
+            
+            # Identify products that are explicitly 'Pods' based on category, name, or brew_method column
+            explicit_pods_mask = (current_filtered_products['category'].str.contains('pod', case=False, na=False)) | \
+                                 (current_filtered_products['name'].str.contains('pod|k-cup|k cup|single serve', flags=re.IGNORECASE, na=False)) | \
+                                 (current_filtered_products['brew_method'].str.contains('pod', case=False, na=False))
+
+            # If user *selected* "Pods"
+            if "Pods" in brew_method_options_user:
+                # Keep pods and products matching other selected methods
+                allowed_methods_lower = [m.lower() for m in brew_method_options_user if m != "Pods"]
+                
                 temp_df = current_filtered_products[
+                    explicit_pods_mask | # Keep explicit pods
                     current_filtered_products.apply(
                         lambda row: any(
-                            b_m in (str(row['brew_method']).lower() + ' ' + str(row['name']).lower()) # Check brew method column AND name for keywords
-                            for b_m in brew_method_lower
-                        ),
-                        axis=1
+                            m in (row['brew_method'].lower() + ' ' + row['name'].lower())
+                            for m in allowed_methods_lower
+                        ), axis=1
                     )
                 ]
                 if not temp_df.empty:
                     current_filtered_products = temp_df
                 else:
                     st.warning("No products found matching your selected brew method(s). Broadening search by ignoring brew method.")
-                    # If no match for brew method, continue with `current_filtered_products` from previous filters
+                    # If no match, we don't filter by brew method, so `current_filtered_products` remains as it was
                     pass
+
+            # If user *did NOT* select "Pods"
+            elif "Pods" not in brew_method_options_user and brew_method_options_user: # Only filter if other methods are chosen
+                # Exclude explicit pods
+                current_filtered_products = current_filtered_products[~explicit_pods_mask]
+
+                # Now apply the other selected brew methods (Ground, Whole Bean)
+                allowed_methods_lower = [m.lower() for m in brew_method_options_user]
+                
+                temp_df = current_filtered_products[
+                    current_filtered_products.apply(
+                        lambda row: any(
+                            m in (row['brew_method'].lower() + ' ' + row['name'].lower())
+                            for m in allowed_methods_lower
+                        ), axis=1
+                    )
+                ]
+                if not temp_df.empty:
+                    current_filtered_products = temp_df
+                else:
+                    st.warning(f"No products found matching your selected non-pod brew method(s): {brew_method_options_user}. Broadening search by ignoring brew method.")
+                    # If no match, we revert to the state before this brew method filter
+                    # (i.e., products that were already filtered by category and NOT pods)
+                    pass
+            elif not brew_method_options_user: # If no brew method selected at all, exclude pods by default
+                current_filtered_products = current_filtered_products[~explicit_pods_mask]
+                st.info("No brew method selected. Automatically excluding 'Pods' and showing all 'Ground'/'Whole Bean' products.")
+
 
             # 3. Filter by Roast Preference (only for Coffee)
             if drink_type == "Coffee" and roast_preference != "No preference":
@@ -295,8 +366,8 @@ if not df_products.empty:
                 if not temp_df.empty:
                     current_filtered_products = temp_df
                 else:
-                    st.warning(f"No coffee found with '{roast_preference}' roast level. Broadening search by ignoring roast level for coffee.")
-                    pass # If no match for roast level, continue with `current_filtered_products` from previous filters
+                    st.warning(f"No coffee found with '{roast_preference}' roast level matching other criteria. Broadening search by ignoring roast level for coffee.")
+                    pass # Keep the `current_filtered_products` as they were before this filter if it fails
 
             # Now, apply flavor matching or surprise logic
             recommendations = pd.DataFrame()
@@ -408,7 +479,14 @@ if not df_products.empty:
                         st.markdown(f"**Brew Method:** {row['brew_method']}")
                     if row['roast_level'].strip():
                         st.markdown(f"**Roast Level:** {row['roast_level']}")
-                    st.write(f"*{row['short_description']}*")
+                    
+                    # Robust short_description display
+                    clean_short_description = str(row['short_description']).strip()
+                    if clean_short_description:
+                        st.write(f"*{clean_short_description}*")
+                    else:
+                        st.write("*No short description available.*")
+
                     st.markdown(f"**Price:** ${row['price']:.2f}") # Format price
                     if row['specific_flavors']:
                         st.markdown(f"**Flavor Notes:** {row['specific_flavors']}")
