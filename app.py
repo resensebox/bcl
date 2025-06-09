@@ -17,27 +17,64 @@ st.set_page_config(
     menu_items=None
 )
 
-# --- Apply Custom CSS for White Background (TEXT COLOR CSS REMOVED) ---
+# --- Apply Custom CSS for White Background and Dark Text (Attempting a more robust method) ---
+# This CSS attempts to set a light theme with dark text more broadly.
 st.markdown(
     """
     <style>
-    /* Setting background colors to white */
+    /* Global settings for the app */
     .stApp {
-        background-color: white;
+        background-color: #FFFFFF; /* White background */
+        color: #1A1A1A; /* Very dark gray text for contrast */
     }
+
+    /* Header background */
     .stApp > header {
-        background-color: white;
+        background-color: #FFFFFF;
     }
-    .st-emotion-cache-z5fcl4 { /* Main content block */
-        background-color: white;
+
+    /* Main content area */
+    .st-emotion-cache-z5fcl4 { /* This class is often for the main content block */
+        background-color: #FFFFFF;
     }
-    .st-emotion-cache-1c7y2kl { /* Sidebar background */
-        background-color: white;
+
+    /* Sidebar specific colors */
+    .st-emotion-cache-1c7y2kl { /* This is often the main sidebar container */
+        background-color: #F8F8F8; /* Slightly off-white for sidebar distinction */
+        color: #1A1A1A;
     }
-    .st-emotion-cache-1dp5vir { /* Sidebar elements */
-        background-color: white;
+    .st-emotion-cache-1dp5vir { /* Sidebar elements/padding */
+        background-color: #F8F8F8;
     }
-    /* All text color-related CSS has been removed to revert to Streamlit's defaults */
+
+    /* Ensure all text elements inherit or are set to dark */
+    body, p, li, div, .stMarkdown, label, h1, h2, h3, h4, h5, h6, span {
+        color: #1A1A1A; /* Apply dark gray to all common text elements */
+    }
+
+    /* Input widgets text color */
+    .stTextInput > div > div > input,
+    .stTextArea > div > div > textarea,
+    .stMultiSelect > div > div,
+    .stSelectbox > div > div > div > div > div.st-emotion-cache-nahz7x { /* Targeting selectbox text */
+        color: #1A1A1A;
+    }
+
+    /* Specific to radio buttons and checkboxes, to ensure label text is dark */
+    .stRadio > label, .stCheckbox > label {
+        color: #1A1A1A;
+    }
+
+    /* If warnings/info boxes become unreadable, adjust their text color explicitly */
+    .st-emotion-cache-13ln4gm { /* Streamlit's default class for warning/info/success boxes */
+        color: #1A1A1A; /* Ensure warning text is black */
+    }
+
+    /* For selected multiselect options (the chips) */
+    .stMultiSelect div.st-emotion-cache-1h6dgbk { /* Chip background */
+        background-color: #E0E0E0; /* A light grey for the chip background */
+        color: #1A1A1A; /* Dark text on the chip */
+    }
     </style>
     """,
     unsafe_allow_html=True
@@ -266,7 +303,7 @@ if not df_products.empty:
                     ]
 
                     if ai_suggested_tags_filtered:
-                        st.session_state.ai_suggested_tags = ai_suggested_tags_filtered
+                        st.session_state.ai_suggested_tags = ai_tags_filtered
                         st.markdown(f"**We think you might like these flavors:** {', '.join(ai_suggested_tags_filtered)}")
                         agree_to_ai_tags = st.radio(
                             "Are these on point?",
@@ -339,6 +376,7 @@ if not df_products.empty:
                     current_filtered_products = df_products.copy() # Revert to full dataset if no matches for category
             
             st.write(f"**DataFrame shape after Category Filter:** {current_filtered_products.shape}")
+            # Show normalized unique grind values at this point
             st.write(f"**Unique 'Grind' values (after Category Filter, normalized):** {current_filtered_products['grind'].str.strip().str.lower().unique().tolist()}")
 
 
@@ -347,38 +385,38 @@ if not df_products.empty:
                 grind_mask = pd.Series([False] * len(current_filtered_products), index=current_filtered_products.index)
                 
                 st.write(f"**User selected grind options (normalized):** {brew_grind_options_user}")
-                # Normalize the 'grind' column values in the DataFrame before comparison
-                normalized_grind_column = current_filtered_products['grind'].str.strip().str.lower()
+                # Normalize the 'grind' column values in the DataFrame for direct comparison
+                normalized_grind_column_for_filter = current_filtered_products['grind'].str.strip().str.lower()
 
                 for option in brew_grind_options_user:
                     grind_mask = grind_mask | \
-                                 (normalized_grind_column.str.contains(option, na=False))
+                                 (normalized_grind_column_for_filter.str.contains(option, na=False))
                 
                 temp_df_after_grind = current_filtered_products[grind_mask]
                 
                 if not temp_df_after_grind.empty:
                     current_filtered_products = temp_df_after_grind
                     st.write(f"**DataFrame shape after Grind Filter (matched):** {current_filtered_products.shape}")
-                    st.write(f"**'Grind' values of matched products (sample):** {current_filtered_products['grind'].head().tolist()}")
+                    st.write(f"**'Grind' values of matched products (sample):** {current_filtered_products['grind'].head(5).tolist()}") # Show sample of actual values
                 else:
                     st.warning(f"No products found matching your selected brew/grind type(s): {', '.join([opt.capitalize() for opt in brew_grind_options_user])}. Adjusting recommendations based on other preferences.")
                     st.write(f"**DataFrame shape after Grind Filter (no match, reverted):** {current_filtered_products.shape}")
-                    st.write(f"**Original 'Grind' values before this filter (sample):** {current_filtered_products['grind'].head().tolist()}")
+                    st.write(f"**Original 'Grind' values before this filter (sample):** {current_filtered_products['grind'].head(5).tolist()}") # Show sample before filter was applied
                     pass # current_filtered_products does not change if temp_df_after_grind is empty
 
             else: # If no grind types are selected, default to non-pod products
                 st.info("No brew method selected. Automatically excluding 'Pods' and showing all 'Ground'/'Whole Bean' products.")
-                normalized_grind_column = current_filtered_products['grind'].str.strip().str.lower()
-                non_pod_mask = ~normalized_grind_column.str.contains("pod", na=False)
+                normalized_grind_column_for_filter = current_filtered_products['grind'].str.strip().str.lower()
+                non_pod_mask = ~normalized_grind_column_for_filter.str.contains("pod", na=False)
                 temp_df_after_non_pod_filter = current_filtered_products[non_pod_mask]
                 if not temp_df_after_non_pod_filter.empty:
                     current_filtered_products = temp_df_after_non_pod_filter
                     st.write(f"**DataFrame shape after Grind Filter (default non-pod):** {current_filtered_products.shape}")
-                    st.write(f"**'Grind' values of default non-pod products (sample):** {current_filtered_products['grind'].head().tolist()}")
+                    st.write(f"**'Grind' values of default non-pod products (sample):** {current_filtered_products['grind'].head(5).tolist()}")
                 else:
                     st.warning("No non-pod products found based on other filters. Showing all products regardless of grind type.")
                     st.write(f"**DataFrame shape after Grind Filter (default non-pod, no match, reverted):** {current_filtered_products.shape}")
-                    st.write(f"**Original 'Grind' values before this filter (sample):** {current_filtered_products['grind'].head().tolist()}")
+                    st.write(f"**Original 'Grind' values before this filter (sample):** {current_filtered_products['grind'].head(5).tolist()}")
                     pass
 
 
