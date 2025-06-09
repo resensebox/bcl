@@ -209,7 +209,7 @@ if not df_products.empty:
                         scores = cosine_matrix[0] if cosine_matrix.shape[0] > 0 else []
                         products_for_similarity = products_for_similarity.head(len(scores)).copy()
                         products_for_similarity['similarity_score'] = scores
-                                                recommendations = products_for_similarity.sort_values(by='similarity_score', ascending=False).head(5) if not products_for_similarity.empty else filtered_products.sample(min(3, len(filtered_products)))
+                        recommendations = products_for_similarity.sort_values(by='similarity_score', ascending=False).head(5) if not products_for_similarity.empty else filtered_products.sample(min(3, len(filtered_products)))
                     except Exception as e:
                         st.warning(f"Similarity comparison failed: {e}")
                         recommendations = filtered_products.sample(min(3, len(filtered_products)))
