@@ -228,15 +228,11 @@ if not df_products.empty:
 
                             if user_accepts:
                                 products_for_similarity['flavor_overlap'] = products_for_similarity['flavor_tags'].apply(
-                                    lambda tags: len(set(flavor_input) & set([t.strip() for t in tags.split(',')] if isinstance(tags, str) else [])))
+                                    lambda tags: len(set(flavor_input + new_tags) & set([t.strip() for t in tags.split(',')] if isinstance(tags, str) else [])))
                                 matched = products_for_similarity[products_for_similarity['flavor_overlap'] > 0].copy()
                                 recommendations = matched.sort_values(by='flavor_overlap', ascending=False).head(5)
                             else:
-                                st.warning("No problem! Try selecting different flavor notes or hit 'Surprise Me' to get a fresh pick.")
-                            flavor_input += new_tags
-                            products_for_similarity['flavor_overlap'] = products_for_similarity['flavor_tags'].apply(lambda tags: len(set(flavor_input) & set([t.strip() for t in tags.split(',')] if isinstance(tags, str) else [])))
-                            matched = products_for_similarity[products_for_similarity['flavor_overlap'] > 0].copy()
-                            recommendations = matched.sort_values(by='flavor_overlap', ascending=False).head(5)
+                                recommendations = filtered_products.sample(min(3, len(filtered_products)))
                     except Exception as e:
                         st.warning(f"AI fallback suggestion failed: {e}")
 
