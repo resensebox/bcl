@@ -198,18 +198,36 @@ if not df_products.empty:
                 else:
                     st.warning("No products found matching your basic type and brew preferences for 'Surprise Me'.")
             elif flavor_input:
-                search_text = ", ".join(flavor_input)
-                products_for_similarity = filtered_products[filtered_products['flavor_tag_embedding'].apply(lambda x: hasattr(x, 'shape') and x.shape[0] > 0)].copy()
+                products_for_similarity = filtered_products.copy()
+                products_for_similarity['flavor_overlap'] = products_for_similarity['flavor_tags'].apply(lambda tags: len(set(flavor_input) & set([t.strip() for t in tags.split(',')] if isinstance(tags, str) else [])))
+                matched = products_for_similarity[products_for_similarity['flavor_overlap'] > 0].copy()
+                recommendations = matched.sort_values(by='flavor_overlap', ascending=False).head(5)
 
-                if not products_for_similarity.empty:
+                if recommendations.empty:
+                    # Use AI to suggest adjacent tags
                     try:
-                        user_embedding = get_embeddings([search_text])[0]
-                        product_embeddings = [e for e in products_for_similarity['flavor_tag_embedding'] if hasattr(e, 'shape') and e.shape[0] > 0]
-                        cosine_matrix = util.cos_sim(user_embedding, product_embeddings).detach().cpu().numpy()
-                        scores = cosine_matrix[0] if cosine_matrix.shape[0] > 0 else []
-                        products_for_similarity = products_for_similarity.head(len(scores)).copy()
-                        products_for_similarity['similarity_score'] = scores
-                        recommendations = products_for_similarity.sort_values(by='similarity_score', ascending=False).head(5) if not products_for_similarity.empty else filtered_products.sample(min(3, len(filtered_products)))
+                        response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[
+                                {"role": "system", "content": "You are a helpful assistant that enhances vague or short flavor preferences by suggesting related tags."},
+                                {"role": "user", "content": f"These are the flavor notes the user selected: {', '.join(flavor_input)}. Suggest 3-5 similar or adjacent flavor notes that appear in this list: {', '.join(flavor_suggestions)}."}
+                            ],
+                            max_tokens=100,
+                            temperature=0.7
+                        )
+                        new_tags = response.choices[0].message.content.strip().split(',')
+                        new_tags = [tag.strip() for tag in new_tags if tag.strip() in flavor_suggestions and tag.strip() not in flavor_input]
+                        if new_tags:
+                            st.info(f"It sounds like you enjoy flavors like {', '.join(flavor_input)}. You might also like: {', '.join(new_tags)}")
+                            flavor_input += new_tags
+                            products_for_similarity['flavor_overlap'] = products_for_similarity['flavor_tags'].apply(lambda tags: len(set(flavor_input) & set([t.strip() for t in tags.split(',')] if isinstance(tags, str) else [])))
+                            matched = products_for_similarity[products_for_similarity['flavor_overlap'] > 0].copy()
+                            recommendations = matched.sort_values(by='flavor_overlap', ascending=False).head(5)
+                    except Exception as e:
+                        st.warning(f"AI fallback suggestion failed: {e}")
+
+                if recommendations.empty:
+                    recommendations = filtered_products.sample(min(3, len(filtered_products))) if not products_for_similarity.empty else filtered_products.sample(min(3, len(filtered_products)))
                     except Exception as e:
                         st.warning(f"Similarity comparison failed: {e}")
                         recommendations = filtered_products.sample(min(3, len(filtered_products)))
