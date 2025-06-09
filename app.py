@@ -158,7 +158,7 @@ if not df_products.empty:
                     st.warning("No products found matching your basic type and brew preferences for 'Surprise Me'.")
             elif flavor_input:
                 products_for_similarity = filtered_products[
-                    filtered_products['long_description_embedding'].apply(lambda x: x.size > 0)
+                    filtered_products['long_description_embedding'].apply(lambda x: x is not None and hasattr(x, 'numel') and x.numel() > 0)
                 ].copy()
 
                 if not products_for_similarity.empty:
